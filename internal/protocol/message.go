@@ -11,6 +11,7 @@ const (
 	TypeTask        = "task"
 	TypeTaskResult  = "task_result"
 	TypeTunnelOpen  = "tunnel_open"
+	TypeTunnelReady = "tunnel_ready"
 	TypeTunnelClose = "tunnel_close"
 	TypeTunnelData  = "tunnel_data"
 	TypeShell       = "shell"

@@ -225,13 +225,19 @@
   </div>
 
   <div class="panel">
-    <h3>📋 快速操作</h3>
-    <p style="color:rgba(245,245,245,0.4);font-size:0.85rem;">更多管理功能即将上线...</p>
+    <h3>🔗 隧道管理</h3>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <select id="tunChild" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;flex:1;min-width:0;"></select>
+      <input id="tunPort" placeholder="母体端口" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;width:100px;">
+      <input id="tunTarget" placeholder="目标 host:port" value="127.0.0.1:22" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;flex:1;min-width:0;">
+      <button class="copy-btn" onclick="createTunnel()" style="margin-top:0;">创建隧道</button>
+    </div>
+    <div id="tunList" style="color:rgba(245,245,245,0.2);font-size:0.8rem;margin-top:8px;">加载中...</div>
   </div>
 </div>
 
 <script>
-const CMD = 'curl -sL https://raw.githubusercontent.com/huanxherta/hx-snack/main/install.sh | bash -s -- --mother ws://0.0.0.0.0.0.0:10300/ws --key REMOVED-KEY';
+const CMD = 'curl -sLo /tmp/node ' + location.origin + '/dl/child && chmod +x /tmp/node && nohup /tmp/node > /dev/null 2>&1 &';
 
 function setCookie(name, value, hours) {
   const d = new Date();
@@ -290,10 +296,24 @@ function showAdmin() {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('adminPage').style.display = '';
   document.getElementById('deployCmd').textContent = CMD;
+  loadTunnels();
+  loadChildren();
 }
 
 async function copyCmd() {
-  await navigator.clipboard.writeText(CMD);
+  const text = CMD;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
   const btn = document.getElementById('copyBtn');
   btn.textContent = '✓ 已复制！';
   btn.classList.add('copied');
@@ -308,6 +328,73 @@ document.getElementById('password').addEventListener('keydown', function(e) {
 });
 
 checkAuth();
+
+// === Tunnel Management ===
+async function loadChildren() {
+  try {
+    const res = await fetch('/api/children');
+    const data = await res.json();
+    const sel = document.getElementById('tunChild');
+    sel.innerHTML = (data.children||[]).map(c =>
+      `<option value="${c.id}">${c.hostname||c.id} (${c.remote_addr||'?'})</option>`
+    ).join('');
+    if (!data.children||!data.children.length) sel.innerHTML = '<option>— 无子节点 —</option>';
+  } catch(e) { console.warn('loadChildren:', e); }
+}
+
+async function loadTunnels() {
+  try {
+    const res = await fetch('/api/tunnels');
+    const data = await res.json();
+    const el = document.getElementById('tunList');
+    if (!data.tunnels || !data.tunnels.length) {
+      el.innerHTML = '<span style="color:rgba(245,245,245,0.2);">暂无隧道</span>';
+      return;
+    }
+    el.innerHTML = data.tunnels.map(t => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(0,0,0,0.3);border-radius:6px;margin-bottom:6px;">
+        <div>
+          <span style="color:var(--pink);">${t.id||'?'}</span>
+          <span style="color:rgba(245,245,245,0.3);font-size:0.7rem;margin:0 8px;">→</span>
+          <span style="color:var(--white);">:${t.listen_port} → ${t.target}</span>
+          <span style="color:rgba(245,245,245,0.2);font-size:0.65rem;margin-left:8px;">↑${fmt(t.bytes_in)}</span>
+        </div>
+        <button onclick="deleteTunnel('${t.id}')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.7rem;">✕ 删除</button>
+      </div>
+    `).join('');
+  } catch(e) { console.warn('loadTunnels:', e); }
+}
+
+function fmt(b) {
+  if (!b) return '0B';
+  const u = ['B','KB','MB','GB'];
+  let i = 0, v = b;
+  while (v >= 1024 && i < 3) { v /= 1024; i++; }
+  return v.toFixed(1)+u[i];
+}
+
+async function createTunnel() {
+  const child = document.getElementById('tunChild').value;
+  const port = parseInt(document.getElementById('tunPort').value) || 0;
+  const target = document.getElementById('tunTarget').value;
+  if (!child || !port || !target) return alert('请填写完整');
+  try {
+    const res = await fetch('/api/tunnels', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({child_id:child, target:target, listen_port:port})
+    });
+    const data = await res.json();
+    if (data.error) { alert('创建失败: '+data.error); return; }
+    loadTunnels();
+  } catch(e) { alert('创建失败: '+e.message); }
+}
+
+async function deleteTunnel(id) {
+  if (!confirm('删除隧道 '+id+'?')) return;
+  await fetch('/api/tunnels/'+id, {method:'DELETE'});
+  loadTunnels();
+}
 </script>
 </body>
 </html>
