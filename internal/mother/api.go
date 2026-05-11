@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-//go:embed all:../../web
+//go:embed web/*
 var webAssets embed.FS
 
 // SetupRoutes registers all HTTP routes on the given mux.
