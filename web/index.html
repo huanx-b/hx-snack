@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hxの偷吃 — Mother Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&family=Noto+Sans+SC:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --crimson: #2a0006;
+    --blood: #7a0019;
+    --accent: #d4143a;
+    --white: #f5f5f5;
+    --pink: #ffb3c1;
+    --glass: rgba(42, 0, 6, 0.45);
+    --glass-border: rgba(212, 20, 58, 0.15);
+    --glow: 0 0 30px rgba(212, 20, 58, 0.2);
+    --glow-strong: 0 0 60px rgba(212, 20, 58, 0.35);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--white);
+    overflow-x: hidden;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* Background effects */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background:
+      radial-gradient(ellipse at 20% 20%, rgba(122, 0, 25, 0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 60%, rgba(212, 20, 58, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 90%, rgba(42, 0, 6, 0.4) 0%, transparent 40%);
+    z-index: -2;
+    animation: bgShift 20s ease-in-out infinite alternate;
+  }
+
+  @keyframes bgShift {
+    0% { transform: translate(0, 0); }
+    50% { transform: translate(2%, -1%); }
+    100% { transform: translate(-1%, 2%); }
+  }
+
+  /* Particles layer */
+  .particles {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    animation: floatUp linear infinite;
+    opacity: 0;
+  }
+
+  @keyframes floatUp {
+    0% { transform: translateY(0) scale(0); opacity: 0; }
+    10% { opacity: 0.8; }
+    90% { opacity: 0.1; }
+    100% { transform: translateY(-100vh) scale(1.5); opacity: 0; }
+  }
+
+  /* Glass shards */
+  .shard {
+    position: fixed;
+    pointer-events: none;
+    z-index: -1;
+    background: linear-gradient(135deg, rgba(212,20,58,0.06), rgba(255,179,193,0.03));
+    border: 1px solid rgba(212,20,58,0.08);
+    backdrop-filter: blur(2px);
+    clip-path: polygon(0 0, 100% 15%, 85% 100%, 15% 90%);
+    animation: shardFloat 25s ease-in-out infinite;
+  }
+
+  @keyframes shardFloat {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    33% { transform: translate(30px, -20px) rotate(3deg); }
+    66% { transform: translate(-20px, 10px) rotate(-2deg); }
+  }
+
+  /* Navigation */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(11, 11, 15, 0.75);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--glass-border);
+    padding: 0 40px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-logo {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, var(--accent), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-logo-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent), var(--blood));
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: rgba(245,245,245,0.6);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: all 0.3s;
+    position: relative;
+  }
+
+  .nav-links a:hover {
+    color: var(--white);
+  }
+
+  .nav-links a::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 0;
+    height: 1.5px;
+    background: var(--accent);
+    transition: width 0.3s;
+  }
+
+  .nav-links a:hover::after { width: 100%; }
+
+  .nav-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--pink);
+  }
+
+  .nav-status-dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Hero */
+  .hero {
+    min-height: 85vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 40px;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 20%; left: 10%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(212,20,58,0.1) 0%, transparent 70%);
+    filter: blur(60px);
+    animation: heroGlow 8s ease-in-out infinite alternate;
+  }
+
+  @keyframes heroGlow {
+    0% { transform: scale(1) translate(0, 0); }
+    100% { transform: scale(1.3) translate(50px, -30px); }
+  }
+
+  .hero-content {
+    text-align: center;
+    max-width: 900px;
+    z-index: 1;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    font-size: 0.8rem;
+    color: var(--pink);
+    margin-bottom: 32px;
+    animation: fadeInUp 0.8s ease-out;
+  }
+
+  .hero-title {
+    font-size: 4.5rem;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin-bottom: 24px;
+    animation: fadeInUp 0.8s ease-out 0.1s both;
+  }
+
+  .hero-title em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--pink) 50%, var(--accent) 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradientShift 4s ease-in-out infinite;
+  }
+
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 200% center; }
+  }
+
+  .hero-subtitle {
+    font-size: 1.15rem;
+    font-weight: 300;
+    color: rgba(245,245,245,0.5);
+    line-height: 1.8;
+    max-width: 600px;
+    margin: 0 auto 40px;
+    animation: fadeInUp 0.8s ease-out 0.2s both;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    animation: fadeInUp 0.8s ease-out 0.3s both;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 32px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: all 0.35s;
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--blood));
+    color: var(--white);
+    box-shadow: var(--glow);
+  }
+
+  .btn-primary:hover {
+    box-shadow: var(--glow-strong);
+    transform: translateY(-2px);
+  }
+
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--pink), transparent, var(--accent));
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .btn-primary:hover::after { opacity: 1; }
+
+  .btn-glass {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    color: var(--white);
+  }
+
+  .btn-glass:hover {
+    border-color: rgba(212,20,58,0.4);
+    background: rgba(42,0,6,0.6);
+    transform: translateY(-2px);
+  }
+
+  .hero-stats {
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+    margin-top: 64px;
+    animation: fadeInUp 0.8s ease-out 0.4s both;
+  }
+
+  .hero-stat {
+    text-align: center;
+  }
+
+  .hero-stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-stat-label {
+    font-size: 0.75rem;
+    color: rgba(245,245,245,0.35);
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+  }
+
+  /* Dashboard Section */
+  .section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 80px 40px;
+  }
+
+  .section-header {
+    margin-bottom: 48px;
+  }
+
+  .section-tag {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  .section-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+
+  .section-desc {
+    color: rgba(245,245,245,0.4);
+    font-weight: 300;
+    font-size: 0.95rem;
+  }
+
+  /* Cards Grid */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--glass);
+    backdrop-filter: blur(15px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 28px;
+    transition: all 0.4s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card:hover {
+    border-color: rgba(212,20,58,0.25);
+    box-shadow: var(--glow);
+    transform: translateY(-4px);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 1.5px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  .card-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    margin-bottom: 16px;
+    background: rgba(212,20,58,0.1);
+    border: 1px solid rgba(212,20,58,0.15);
+  }
+
+  .card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .card-desc {
+    font-size: 0.8rem;
+    color: rgba(245,245,245,0.35);
+    line-height: 1.6;
+  }
+
+  .card-stat {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--accent);
+  }
+
+  .card-stat-label {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: rgba(245,245,245,0.3);
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    margin-top: 12px;
+    height: 3px;
+    background: rgba(245,245,245,0.05);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--blood), var(--accent));
+    transition: width 1.5s ease;
+    box-shadow: 0 0 8px rgba(212,20,58,0.3);
+  }
+
+  /* Children Table */
+  .child-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+  }
+
+  .child-table th {
+    text-align: left;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: rgba(245,245,245,0.3);
+    padding: 0 16px 8px;
+    font-weight: 600;
+  }
+
+  .child-row {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    transition: all 0.3s;
+  }
+
+  .child-row:hover {
+    border-color: rgba(212,20,58,0.3);
+    box-shadow: var(--glow);
+  }
+
+  .child-row td {
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    vertical-align: middle;
+  }
+
+  .child-row td:first-child { border-radius: 10px 0 0 10px; }
+  .child-row td:last-child { border-radius: 0 10px 10px 0; }
+
+  .child-name {
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .child-location {
+    font-size: 0.75rem;
+    color: rgba(245,245,245,0.3);
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .status-online {
+    background: rgba(212,20,58,0.12);
+    color: var(--accent);
+  }
+
+  .status-online::before {
+    content: '';
+    width: 5px; height: 5px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  .status-offline {
+    background: rgba(245,245,245,0.05);
+    color: rgba(245,245,245,0.3);
+  }
+
+  .status-offline::before {
+    content: '';
+    width: 5px; height: 5px;
+    background: rgba(245,245,245,0.3);
+    border-radius: 50%;
+  }
+
+  /* Tunnel section */
+  .tunnel-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .tunnel-card {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.3s;
+  }
+
+  .tunnel-card:hover {
+    border-color: rgba(212,20,58,0.25);
+  }
+
+  .tunnel-indicator {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    flex-shrink: 0;
+  }
+
+  .tunnel-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tunnel-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .tunnel-detail {
+    font-size: 0.75rem;
+    color: rgba(245,245,245,0.35);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tunnel-traffic {
+    text-align: right;
+    font-size: 0.75rem;
+    color: var(--pink);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .modal {
+    background: rgba(11,11,15,0.95);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: var(--glow-strong);
+    animation: modalIn 0.4s ease;
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .modal-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .modal-desc {
+    color: rgba(245,245,245,0.4);
+    font-size: 0.85rem;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .modal-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--white);
+    font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 16px;
+    transition: border-color 0.3s;
+  }
+
+  .modal-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(212,20,58,0.1);
+  }
+
+  .modal-input::placeholder {
+    color: rgba(245,245,245,0.2);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 40px;
+    border-top: 1px solid var(--glass-border);
+    color: rgba(245,245,245,0.2);
+    font-size: 0.75rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- Particles -->
+<div class="particles" id="particles"></div>
+
+<!-- Glass shards -->
+<div class="shard" style="top:15%;left:5%;width:120px;height:80px;"></div>
+<div class="shard" style="top:60%;right:8%;width:90px;height:60px;animation-delay:-8s;"></div>
+<div class="shard" style="top:40%;left:75%;width:70px;height:50px;animation-delay:-15s;"></div>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-logo">
+    <div class="nav-logo-icon">食</div>
+    hxの偷吃
+  </div>
+  <ul class="nav-links">
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#children">Children</a></li>
+    <li><a href="#tunnels">Tunnels</a></li>
+    <li><a href="#tasks">Tasks</a></li>
+  </ul>
+  <div class="nav-status">
+    <div class="nav-status-dot"></div>
+    Mother Online
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);"></span>
+      Distributed C2 Framework v0.1.0
+    </div>
+    <h1 class="hero-title">
+      One <em>Mother</em>,<br>Infinite <em>Children</em>
+    </h1>
+    <p class="hero-subtitle">
+      From shadows we command. Silent threads weave across continents —
+      monitoring, tunneling, executing. A whisper becomes a storm.
+    </p>
+    <div class="hero-actions">
+      <a href="#" class="btn btn-primary" onclick="document.getElementById('deployModal').style.display='flex'">
+        Deploy Child
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+      <a href="#dashboard" class="btn btn-glass">
+        View Dashboard
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-value">3</div>
+        <div class="hero-stat-label">ACTIVE CHILDREN</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-value">5</div>
+        <div class="hero-stat-label">ACTIVE TUNNELS</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-value">99.97%</div>
+        <div class="hero-stat-label">UPTIME</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Dashboard -->
+<section class="section" id="dashboard">
+  <div class="section-header">
+    <div class="section-tag">╱ OVERVIEW</div>
+    <div class="section-title">System Dashboard</div>
+    <div class="section-desc">Real-time telemetry from all connected nodes</div>
+  </div>
+
+  <div class="dashboard-grid">
+    <div class="card">
+      <div class="card-icon">🖥</div>
+      <div class="card-title">CPU Usage</div>
+      <div class="card-desc">Aggregated across all children</div>
+      <div class="card-stat">23.4<span class="card-stat-label">%</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:23.4%"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💾</div>
+      <div class="card-title">Memory</div>
+      <div class="card-desc">Average cluster memory pressure</div>
+      <div class="card-stat">6.2<span class="card-stat-label">GB / 16GB</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:38.8%"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🌐</div>
+      <div class="card-title">Network I/O</div>
+      <div class="card-desc">Total ingress across all tunnels</div>
+      <div class="card-stat">142<span class="card-stat-label">MB/s</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:71%"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📡</div>
+      <div class="card-title">Latency</div>
+      <div class="card-desc">Mother ↔ Child average ping</div>
+      <div class="card-stat">48<span class="card-stat-label">ms</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:16%"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <div class="card-title">Tasks Running</div>
+      <div class="card-desc">Distributed across children</div>
+      <div class="card-stat">7<span class="card-stat-label">active</span></div>
+      <div style="margin-top:8px;font-size:0.7rem;color:rgba(245,245,245,0.3);">12 completed today</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔒</div>
+      <div class="card-title">Tunnel Status</div>
+      <div class="card-desc">WS-based port forwards</div>
+      <div class="card-stat">5/5<span class="card-stat-label">healthy</span></div>
+      <div style="margin-top:8px;font-size:0.7rem;color:rgba(245,245,245,0.3);">0 failures last 24h</div>
+    </div>
+  </div>
+</section>
+
+<!-- Children -->
+<section class="section" id="children">
+  <div class="section-header">
+    <div class="section-tag">╱ NODES</div>
+    <div class="section-title">Children</div>
+    <div class="section-desc">Connected sub-nodes deployed across the world</div>
+  </div>
+
+  <table class="child-table">
+    <thead>
+      <tr>
+        <th>NAME</th>
+        <th>LOCATION</th>
+        <th>STATUS</th>
+        <th>CPU</th>
+        <th>MEM</th>
+        <th>UPTIME</th>
+        <th>LATENCY</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="child-row">
+        <td><div class="child-name">sakura-01</div><div class="child-location">child-sakura</div></td>
+        <td><span class="child-location">Tokyo, JP</span></td>
+        <td><span class="status-badge status-online">Online</span></td>
+        <td>12%</td>
+        <td>1.2GB</td>
+        <td>14d 6h</td>
+        <td>32ms</td>
+      </tr>
+      <tr class="child-row">
+        <td><div class="child-name">nyx-02</div><div class="child-location">child-nyx</div></td>
+        <td><span class="child-location">Los Angeles, US</span></td>
+        <td><span class="status-badge status-online">Online</span></td>
+        <td>8%</td>
+        <td>0.9GB</td>
+        <td>7d 12h</td>
+        <td>156ms</td>
+      </tr>
+      <tr class="child-row">
+        <td><div class="child-name">luna-03</div><div class="child-location">child-luna</div></td>
+        <td><span class="child-location">Hong Kong, CN</span></td>
+        <td><span class="status-badge status-offline">Offline</span></td>
+        <td colspan="4" style="color:rgba(245,245,245,0.1);">—</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Tunnels -->
+<section class="section" id="tunnels">
+  <div class="section-header">
+    <div class="section-tag">╱ TUNNELS</div>
+    <div class="section-title">Active Tunnels</div>
+    <div class="section-desc">WebSocket-based port forwarding from Mother to Children</div>
+  </div>
+
+  <div class="tunnel-list">
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">sakura-http</div>
+        <div class="tunnel-detail">Mother:9090 → sakura-01:80</div>
+      </div>
+      <div class="tunnel-traffic">↑ 2.1GB</div>
+    </div>
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">sakura-ssh</div>
+        <div class="tunnel-detail">Mother:9022 → sakura-01:22</div>
+      </div>
+      <div class="tunnel-traffic">↑ 340MB</div>
+    </div>
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">nyx-proxy</div>
+        <div class="tunnel-detail">Mother:9091 → nyx-02:3128</div>
+      </div>
+      <div class="tunnel-traffic">↑ 8.7GB</div>
+    </div>
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">nyx-db</div>
+        <div class="tunnel-detail">Mother:9543 → nyx-02:5432</div>
+      </div>
+      <div class="tunnel-traffic">↑ 1.4GB</div>
+    </div>
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">luna-api</div>
+        <div class="tunnel-detail">Mother:9080 → luna-03:3000</div>
+      </div>
+      <div class="tunnel-traffic" style="color:rgba(245,245,245,0.2);">disconnected</div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<div class="footer">
+  hxの偷吃 · Mother Node · All children report. All tunnels hold. All is well.
+</div>
+
+<!-- Deploy Modal -->
+<div class="modal-overlay" id="deployModal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal">
+    <div class="modal-title">Deploy Child Node</div>
+    <div class="modal-desc">Run this command on any Linux VPS to join the swarm. The child will auto-register with this Mother.</div>
+    <input class="modal-input" readonly
+      value="curl -sL https://gh.hx.dev/hx-snack/install.sh | bash -s -- --mother wss://bpb.0d000721.cv/ws --key ********"
+      onclick="this.select()">
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <button class="btn btn-glass" onclick="document.getElementById('deployModal').style.display='none'">Close</button>
+      <button class="btn btn-primary" onclick="navigator.clipboard.writeText(document.querySelector('.modal-input').value);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',2000)">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Generate particles
+const particlesEl = document.getElementById('particles');
+for (let i = 0; i < 40; i++) {
+  const p = document.createElement('div');
+  p.className = 'particle';
+  const size = Math.random() * 3 + 1;
+  p.style.cssText = `
+    left: ${Math.random() * 100}%;
+    bottom: -10px;
+    width: ${size}px;
+    height: ${size}px;
+    background: ${Math.random() > 0.5 ? 'var(--accent)' : 'var(--pink)'};
+    animation-duration: ${Math.random() * 12 + 8}s;
+    animation-delay: ${Math.random() * 10}s;
+    box-shadow: 0 0 ${size*3}px ${Math.random() > 0.5 ? 'var(--accent)' : 'var(--pink)'};
+  `;
+  particlesEl.appendChild(p);
+}
+</script>
+</body>
+</html>
