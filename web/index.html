@@ -844,16 +844,16 @@
     </div>
     <div class="hero-stats" id="hero-stats">
       <div class="hero-stat">
-        <div class="hero-stat-value">3</div>
+        <div class="hero-stat-value">—</div>
         <div class="hero-stat-label">活跃子节点</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-stat-value">5</div>
+        <div class="hero-stat-value">—</div>
         <div class="hero-stat-label">活跃隧道</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-stat-value">99.97%</div>
-        <div class="hero-stat-label">运行时间</div>
+        <div class="hero-stat-value">—</div>
+        <div class="hero-stat-label">已完成任务</div>
       </div>
     </div>
   </div>
@@ -868,47 +868,41 @@
   </div>
 
   <div class="dashboard-grid">
-    <div class="card">
+    <div class="card" id="card-cpu">
       <div class="card-icon">🖥</div>
       <div class="card-title">CPU 使用率</div>
-      <div class="card-desc">所有子节点汇总</div>
-      <div class="card-stat">23.4<span class="card-stat-label">%</span></div>
-      <div class="progress-bar"><div class="progress-fill" style="width:23.4%"></div></div>
+      <div class="card-desc">暂无子节点</div>
+      <div class="card-stat">—</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-mem">
       <div class="card-icon">💾</div>
-      <div class="card-title">Memory</div>
-      <div class="card-desc">集群平均内存压力</div>
-      <div class="card-stat">6.2<span class="card-stat-label">GB / 16GB</span></div>
-      <div class="progress-bar"><div class="progress-fill" style="width:38.8%"></div></div>
+      <div class="card-title">内存</div>
+      <div class="card-desc">暂无子节点</div>
+      <div class="card-stat">—</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-net">
       <div class="card-icon">🌐</div>
       <div class="card-title">网络 I/O</div>
-      <div class="card-desc">所有隧道总入站流量</div>
-      <div class="card-stat">142<span class="card-stat-label">MB/s</span></div>
-      <div class="progress-bar"><div class="progress-fill" style="width:71%"></div></div>
+      <div class="card-desc">暂无子节点</div>
+      <div class="card-stat">—</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-lat">
       <div class="card-icon">📡</div>
-      <div class="card-title">Latency</div>
-      <div class="card-desc">母体 ↔ 子节点平均延迟</div>
-      <div class="card-stat">48<span class="card-stat-label">ms</span></div>
-      <div class="progress-bar"><div class="progress-fill" style="width:16%"></div></div>
+      <div class="card-title">延迟</div>
+      <div class="card-desc">母体 ↔ 子节点</div>
+      <div class="card-stat">—</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-task">
       <div class="card-icon">⚡</div>
       <div class="card-title">运行中任务</div>
-      <div class="card-desc">分布在子节点上</div>
-      <div class="card-stat">7<span class="card-stat-label">活跃</span></div>
-      <div style="margin-top:8px;font-size:0.7rem;color:rgba(245,245,245,0.3);">12 今日已完成</div>
+      <div class="card-desc">暂无任务</div>
+      <div class="card-stat">0</div>
     </div>
-    <div class="card">
+    <div class="card" id="card-tun">
       <div class="card-icon">🔒</div>
       <div class="card-title">隧道状态</div>
-      <div class="card-desc">基于WS的端口转发</div>
-      <div class="card-stat">5/5<span class="card-stat-label">健康</span></div>
-      <div style="margin-top:8px;font-size:0.7rem;color:rgba(245,245,245,0.3);">0 过去24小时故障</div>
+      <div class="card-desc">暂无隧道</div>
+      <div class="card-stat">0/0</div>
     </div>
   </div>
 </section>
@@ -934,30 +928,7 @@
       </tr>
     </thead>
     <tbody id="children-tbody">
-      <tr class="child-row">
-        <td><div class="child-name">sakura-01</div><div class="child-location">child-sakura</div></td>
-        <td><span class="child-location">东京, 日本</span></td>
-        <td><span class="status-badge status-online">在线</span></td>
-        <td>12%</td>
-        <td>1.2GB</td>
-        <td>14d 6h</td>
-        <td>32ms</td>
-      </tr>
-      <tr class="child-row">
-        <td><div class="child-name">nyx-02</div><div class="child-location">child-nyx</div></td>
-        <td><span class="child-location">洛杉矶, 美国</span></td>
-        <td><span class="status-badge status-online">在线</span></td>
-        <td>8%</td>
-        <td>0.9GB</td>
-        <td>7d 12h</td>
-        <td>156ms</td>
-      </tr>
-      <tr class="child-row">
-        <td><div class="child-name">luna-03</div><div class="child-location">child-luna</div></td>
-        <td><span class="child-location">香港, 中国</span></td>
-        <td><span class="status-badge status-offline">离线</span></td>
-        <td colspan="4" style="color:rgba(245,245,245,0.1);">—</td>
-      </tr>
+      <tr><td colspan="7" style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;">暂无子节点连接。快去部署一个吧！</td></tr>
     </tbody>
   </table>
 </section>
@@ -971,46 +942,7 @@
   </div>
 
   <div class="tunnel-list" id="tunnels-list">
-    <div class="tunnel-card">
-      <div class="tunnel-indicator"></div>
-      <div class="tunnel-info">
-        <div class="tunnel-name">sakura-http</div>
-        <div class="tunnel-detail">Mother:9090 → sakura-01:80</div>
-      </div>
-      <div class="tunnel-traffic">↑ 2.1GB</div>
-    </div>
-    <div class="tunnel-card">
-      <div class="tunnel-indicator"></div>
-      <div class="tunnel-info">
-        <div class="tunnel-name">sakura-ssh</div>
-        <div class="tunnel-detail">Mother:9022 → sakura-01:22</div>
-      </div>
-      <div class="tunnel-traffic">↑ 340MB</div>
-    </div>
-    <div class="tunnel-card">
-      <div class="tunnel-indicator"></div>
-      <div class="tunnel-info">
-        <div class="tunnel-name">nyx-proxy</div>
-        <div class="tunnel-detail">Mother:9091 → nyx-02:3128</div>
-      </div>
-      <div class="tunnel-traffic">↑ 8.7GB</div>
-    </div>
-    <div class="tunnel-card">
-      <div class="tunnel-indicator"></div>
-      <div class="tunnel-info">
-        <div class="tunnel-name">nyx-db</div>
-        <div class="tunnel-detail">Mother:9543 → nyx-02:5432</div>
-      </div>
-      <div class="tunnel-traffic">↑ 1.4GB</div>
-    </div>
-    <div class="tunnel-card">
-      <div class="tunnel-indicator"></div>
-      <div class="tunnel-info">
-        <div class="tunnel-name">luna-api</div>
-        <div class="tunnel-detail">Mother:9080 → luna-03:3000</div>
-      </div>
-      <div class="tunnel-traffic" style="color:rgba(245,245,245,0.2);">已断开</div>
-    </div>
+    <div style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;grid-column:span 2;">暂无活跃隧道</div>
   </div>
 </section>
 
@@ -1120,18 +1052,77 @@ function renderTunnels(tunnels) {
   `).join('');
 }
 
-function renderDashboardGrid(stats) {
-  // Update stat cards
-  const cards = document.querySelectorAll('.dashboard-grid .card');
-  if (cards.length >= 1) {
-    cards[0].querySelector('.card-stat').innerHTML = stats.children || 0;
+function renderDashboardGrid(stats, children) {
+  const hasKids = children && children.length > 0;
+
+  // CPU — aggregate from children
+  const cpuCard = document.getElementById('card-cpu');
+  if (cpuCard) {
+    if (hasKids) {
+      const cpus = children.map(c => c.cpu || 0);
+      const avg = (cpus.reduce((a,b)=>a+b,0) / cpus.length).toFixed(1);
+      cpuCard.querySelector('.card-desc').textContent = `${children.length} 个子节点`;
+      cpuCard.querySelector('.card-stat').innerHTML = `${avg}<span class="card-stat-label">%</span>`;
+    } else {
+      cpuCard.querySelector('.card-desc').textContent = '暂无子节点';
+      cpuCard.querySelector('.card-stat').innerHTML = '—';
+    }
   }
-  if (cards.length >= 5) {
-    cards[4].querySelector('.card-stat').innerHTML = stats.tasks_total || 0;
-    cards[4].querySelector('.card-desc').textContent = `${stats.tasks_completed || 0} 已完成`;
+
+  // Memory
+  const memCard = document.getElementById('card-mem');
+  if (memCard) {
+    if (hasKids) {
+      const used = children.reduce((a,c) => a + (c.mem_used || 0), 0);
+      const total = children.reduce((a,c) => a + (c.mem_total || 0), 0);
+      memCard.querySelector('.card-desc').textContent = `${children.length} 个子节点`;
+      memCard.querySelector('.card-stat').innerHTML = `${formatBytes(used)} / ${formatBytes(total)}`;
+    } else {
+      memCard.querySelector('.card-desc').textContent = '暂无子节点';
+      memCard.querySelector('.card-stat').innerHTML = '—';
+    }
   }
-  if (cards.length >= 6) {
-    cards[5].querySelector('.card-stat').innerHTML = `${stats.tunnels || 0}/${stats.tunnels || 0} <span class="card-stat-label">健康</span>`;
+
+  // Network
+  const netCard = document.getElementById('card-net');
+  if (netCard) {
+    const totalNet = children.reduce((a,c) => a + (c.net_in || 0) + (c.net_out || 0), 0);
+    netCard.querySelector('.card-desc').textContent = hasKids ? `${children.length} 个子节点` : '暂无子节点';
+    netCard.querySelector('.card-stat').innerHTML = hasKids ? formatBytes(totalNet) : '—';
+  }
+
+  // Latency
+  const latCard = document.getElementById('card-lat');
+  if (latCard) {
+    if (hasKids) {
+      const lats = children.map(c => c.ping || 0).filter(v => v > 0);
+      if (lats.length > 0) {
+        const avgLat = Math.round(lats.reduce((a,b)=>a+b,0) / lats.length);
+        latCard.querySelector('.card-desc').textContent = `${lats.length} 个子节点`;
+        latCard.querySelector('.card-stat').innerHTML = `${avgLat}<span class="card-stat-label">ms</span>`;
+      } else {
+        latCard.querySelector('.card-desc').textContent = `${children.length} 个子节点`;
+        latCard.querySelector('.card-stat').innerHTML = '—';
+      }
+    } else {
+      latCard.querySelector('.card-desc').textContent = '暂无子节点';
+      latCard.querySelector('.card-stat').innerHTML = '—';
+    }
+  }
+
+  // Tasks
+  const taskCard = document.getElementById('card-task');
+  if (taskCard) {
+    const running = stats.tasks_total - (stats.tasks_completed || 0);
+    taskCard.querySelector('.card-desc').textContent = running > 0 ? `${running} 个运行中` : '暂无任务';
+    taskCard.querySelector('.card-stat').innerHTML = running || '0';
+  }
+
+  // Tunnels
+  const tunCard = document.getElementById('card-tun');
+  if (tunCard) {
+    tunCard.querySelector('.card-desc').textContent = stats.tunnels > 0 ? `${stats.tunnels} 个活跃隧道` : '暂无隧道';
+    tunCard.querySelector('.card-stat').innerHTML = stats.tunnels > 0 ? `${stats.tunnels}/${stats.tunnels}` : '0/0';
   }
 }
 
@@ -1156,7 +1147,7 @@ async function refresh() {
     renderStats(stats);
     renderChildren(childrenData.children);
     renderTunnels(tunnelsData.tunnels);
-    renderDashboardGrid(stats);
+    renderDashboardGrid(stats, childrenData.children);
     lastError = null;
 
     // Footer
