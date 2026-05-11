@@ -1,16 +1,86 @@
 package mother
 
 import (
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 )
 
 //go:embed web/*
 var webAssets embed.FS
+
+var (
+	adminUsername = "huanx"
+	adminPassword = "m1234"
+	adminSessions = sync.Map{} // token -> expiry
+)
+
+type adminSession struct {
+	Token  string
+	Expiry time.Time
+}
+
+func generateToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			http.Error(w, `{"error":"unauthorized"}`, 401)
+			return
+		}
+		token := auth[7:]
+		val, ok := adminSessions.Load(token)
+		if !ok {
+			http.Error(w, `{"error":"unauthorized"}`, 401)
+			return
+		}
+		sess := val.(adminSession)
+		if time.Now().After(sess.Expiry) {
+			adminSessions.Delete(token)
+			http.Error(w, `{"error":"session expired"}`, 401)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.Username != adminUsername || req.Password != adminPassword {
+		writeJSON(w, map[string]string{"error": "用户名或密码错误"})
+		return
+	}
+	token := generateToken()
+	adminSessions.Store(token, adminSession{Token: token, Expiry: time.Now().Add(24 * time.Hour)})
+	writeJSON(w, map[string]string{"token": token, "message": "登录成功"})
+}
+
+func handleCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]bool{"valid": true})
+}
 
 // SetupRoutes registers all HTTP routes on the given mux.
 func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
@@ -149,6 +219,21 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 	// API — Events (SSE)
 	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
 		WriteSSE(w, hub.Events())
+	})
+
+	// Auth
+	mux.HandleFunc("/api/login", handleLogin)
+	mux.Handle("/api/check", authMiddleware(http.HandlerFunc(handleCheck)))
+
+	// Admin page
+	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
+		data, err := webAssets.ReadFile("web/admin.html")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
 	})
 
 	// WS for children

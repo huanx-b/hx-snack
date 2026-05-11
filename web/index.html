@@ -697,6 +697,100 @@
     color: rgba(245,245,245,0.2);
     font-size: 0.75rem;
   }
+
+  /* === Mobile Responsive === */
+  @media (max-width: 768px) {
+    .nav {
+      padding: 0 16px;
+      height: 56px;
+    }
+    .nav-logo {
+      font-size: 1rem;
+    }
+    .nav-links {
+      display: none;
+    }
+    .nav-status {
+      font-size: 0.7rem;
+    }
+
+    .hero {
+      min-height: auto;
+      padding: 60px 16px;
+    }
+    .hero-title {
+      font-size: 2.2rem;
+    }
+    .hero-subtitle {
+      font-size: 0.9rem;
+    }
+    .hero-actions {
+      flex-direction: column;
+      align-items: center;
+    }
+    .hero-stats {
+      flex-wrap: wrap;
+      gap: 24px;
+      margin-top: 40px;
+    }
+    .hero-stat-value {
+      font-size: 1.4rem;
+    }
+
+    .section {
+      padding: 40px 16px;
+    }
+    .section-title {
+      font-size: 1.5rem;
+    }
+
+    .dashboard-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .card {
+      padding: 20px;
+    }
+    .card-title {
+      font-size: 0.9rem;
+    }
+    .card-stat {
+      font-size: 1.1rem;
+    }
+
+    .child-table {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .child-table th,
+    .child-table td {
+      font-size: 0.7rem;
+      padding: 10px 8px;
+      white-space: nowrap;
+    }
+
+    .tunnel-list {
+      grid-template-columns: 1fr;
+    }
+
+    .modal {
+      padding: 24px;
+      width: 95%;
+    }
+    .modal-title {
+      font-size: 1.1rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+    .hero-title {
+      font-size: 1.7rem;
+    }
+  }
 </style>
 </head>
 <body>
@@ -720,6 +814,7 @@
     <li><a href="#children">子节点</a></li>
     <li><a href="#tunnels">隧道</a></li>
     <li><a href="#tasks">任务</a></li>
+    <li><a href="/admin" style="color:var(--pink)!important;">管理后台</a></li>
   </ul>
   <div class="nav-status">
     <div class="nav-status-dot"></div>
@@ -741,12 +836,8 @@
       从暗影中发号施令。无声的丝线横跨大陆——
       监控、隧道、执行。低语终将化作风暴。
     </p>
-    <div class="hero-actions">
-      <a href="#" class="btn btn-primary" onclick="document.getElementById('deployModal').style.display='flex'">
-        Deploy Child
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-      </a>
-      <a href="#dashboard" class="btn btn-glass">
+<div class="hero-actions">
+      <a href="#dashboard" class="btn btn-primary">
         查看仪表盘
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       </a>
@@ -923,24 +1014,8 @@
   </div>
 </section>
 
-<!-- Footer -->
 <div class="footer">
   hxの偷吃 · Mother Node · 所有子节点在线。所有隧道稳固。一切安好。
-</div>
-
-<!-- Deploy Modal -->
-<div class="modal-overlay" id="deployModal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal">
-    <div class="modal-title">部署子节点</div>
-    <div class="modal-desc">在任何Linux VPS上运行此命令即可加入集群。子节点会自动注册到此母体。</div>
-    <input class="modal-input" readonly
-      value="curl -sL https://gh.hx.dev/hx-snack/install.sh | bash -s -- --mother wss://bpb.0d000721.cv/ws --key ********"
-      onclick="this.select()">
-    <div style="display:flex;gap:12px;justify-content:flex-end;">
-      <button class="btn btn-glass" onclick="document.getElementById('deployModal').style.display='none'">关闭</button>
-      <button class="btn btn-primary" onclick="navigator.clipboard.writeText(document.querySelector('.modal-input').value);this.textContent='已复制!';setTimeout(()=>this.textContent='Copy',2000)">复制</button>
-    </div>
-  </div>
 </div>
 
 <script>

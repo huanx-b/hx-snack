@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 — hxの偷吃</title>
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --crimson: #2a0006;
+    --accent: #d4143a;
+    --white: #f5f5f5;
+    --pink: #ffb3c1;
+    --glass: rgba(42,0,6,0.45);
+    --glass-border: rgba(212,20,58,0.15);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter','Noto Sans SC',sans-serif;
+    background: var(--bg);
+    color: var(--white);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    top:-50%; left:-50%;
+    width:200%; height:200%;
+    background: radial-gradient(ellipse at 20% 20%, rgba(122,0,25,0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 60%, rgba(212,20,58,0.08) 0%, transparent 50%);
+    z-index: -2;
+  }
+
+  .login-box {
+    width: 380px;
+    max-width: 90vw;
+    background: var(--glass);
+    backdrop-filter: blur(15px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 40px;
+    box-shadow: 0 0 30px rgba(212,20,58,0.1);
+  }
+  .login-box h2 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .login-box .sub {
+    color: rgba(245,245,245,0.35);
+    font-size: 0.85rem;
+    margin-bottom: 32px;
+  }
+  .login-box label {
+    display: block;
+    font-size: 0.8rem;
+    color: rgba(245,245,245,0.5);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .login-box input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--white);
+    font-size: 0.95rem;
+    margin-bottom: 20px;
+    transition: border-color 0.3s;
+  }
+  .login-box input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(212,20,58,0.1);
+  }
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    background: linear-gradient(135deg, var(--accent), #7a0019);
+    color: var(--white);
+    letter-spacing: 0.03em;
+    transition: all 0.3s;
+  }
+  .btn:hover {
+    box-shadow: 0 0 30px rgba(212,20,58,0.3);
+  }
+  .error {
+    color: var(--accent);
+    font-size: 0.8rem;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .back-link {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    color: rgba(245,245,245,0.3);
+    text-decoration: none;
+    font-size: 0.8rem;
+  }
+  .back-link:hover { color: var(--pink); }
+
+  /* Dashboard */
+  .dashboard {
+    max-width: 900px;
+    width: 95vw;
+    padding: 40px 20px;
+  }
+  .dashboard h2 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .panel {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .panel h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--pink);
+  }
+  .code-block {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--pink);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    cursor: pointer;
+    transition: border-color 0.3s;
+  }
+  .code-block:hover {
+    border-color: var(--accent);
+  }
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    color: var(--white);
+    transition: all 0.3s;
+  }
+  .copy-btn:hover {
+    border-color: var(--accent);
+    background: rgba(212,20,58,0.1);
+  }
+  .copied {
+    border-color: var(--accent)!important;
+    color: var(--accent)!important;
+  }
+  .logout {
+    color: rgba(245,245,245,0.3);
+    text-decoration: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .logout:hover { color: var(--accent); }
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+</style>
+</head>
+<body>
+<div id="loginPage" class="login-box">
+  <h2>管理后台</h2>
+  <p class="sub">hxの偷吃 · Mother Control Panel</p>
+  <div class="error" id="error"></div>
+  <label>用户名</label>
+  <input type="text" id="username" placeholder="admin">
+  <label>密码</label>
+  <input type="password" id="password" placeholder="****">
+  <button class="btn" onclick="doLogin()">登录</button>
+  <a href="/" class="back-link">← 返回仪表盘</a>
+</div>
+
+<div id="adminPage" class="dashboard" style="display:none;">
+  <div class="header-row">
+    <h2>管理后台</h2>
+    <a class="logout" onclick="doLogout()">退出登录</a>
+  </div>
+
+  <div class="panel">
+    <h3>🚀 部署子节点</h3>
+    <p style="color:rgba(245,245,245,0.4);font-size:0.85rem;margin-bottom:12px;">在任何Linux VPS上运行以下命令即可加入集群</p>
+    <div class="code-block" id="deployCmd" onclick="copyCmd()"></div>
+    <button class="copy-btn" id="copyBtn" onclick="copyCmd()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      复制命令
+    </button>
+  </div>
+
+  <div class="panel">
+    <h3>📋 快速操作</h3>
+    <p style="color:rgba(245,245,245,0.4);font-size:0.85rem;">更多管理功能即将上线...</p>
+  </div>
+</div>
+
+<script>
+const CMD = 'curl -sL https://raw.githubusercontent.com/huanxherta/hx-snack/main/install.sh | bash -s -- --mother ws://0.0.0.0.0.0.0:10300/ws --key REMOVED-KEY';
+
+function setCookie(name, value, hours) {
+  const d = new Date();
+  d.setTime(d.getTime() + hours*3600000);
+  document.cookie = name+'='+value+';expires='+d.toUTCString()+';path=/;SameSite=Lax';
+}
+
+function getCookie(name) {
+  const match = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+  return match ? match[2] : null;
+}
+
+function delCookie(name) {
+  document.cookie = name+'=;expires=Thu,01 Jan 1970 00:00:00 UTC;path=/;SameSite=Lax';
+}
+
+async function doLogin() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  const err = document.getElementById('error');
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username:u, password:p})
+    });
+    const data = await res.json();
+    if (data.token) {
+      setCookie('admin_token', data.token, 24);
+      showAdmin();
+    } else {
+      err.textContent = data.error || '登录失败';
+      err.style.display = 'block';
+    }
+  } catch(e) {
+    err.textContent = '网络错误';
+    err.style.display = 'block';
+  }
+}
+
+function doLogout() {
+  delCookie('admin_token');
+  document.getElementById('loginPage').style.display = '';
+  document.getElementById('adminPage').style.display = 'none';
+}
+
+async function checkAuth() {
+  const token = getCookie('admin_token');
+  if (!token) return;
+  const res = await fetch('/api/check', {headers:{'Authorization':'Bearer '+token}});
+  const data = await res.json();
+  if (data.valid) showAdmin();
+}
+
+function showAdmin() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('adminPage').style.display = '';
+  document.getElementById('deployCmd').textContent = CMD;
+}
+
+async function copyCmd() {
+  await navigator.clipboard.writeText(CMD);
+  const btn = document.getElementById('copyBtn');
+  btn.textContent = '✓ 已复制！';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制命令';
+    btn.classList.remove('copied');
+  }, 2000);
+}
+
+document.getElementById('password').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doLogin();
+});
+
+checkAuth();
+</script>
+</body>
+</html>
