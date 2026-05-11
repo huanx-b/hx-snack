@@ -751,7 +751,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       </a>
     </div>
-    <div class="hero-stats">
+    <div class="hero-stats" id="hero-stats">
       <div class="hero-stat">
         <div class="hero-stat-value">3</div>
         <div class="hero-stat-label">ACTIVE CHILDREN</div>
@@ -842,7 +842,7 @@
         <th>LATENCY</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="children-tbody">
       <tr class="child-row">
         <td><div class="child-name">sakura-01</div><div class="child-location">child-sakura</div></td>
         <td><span class="child-location">Tokyo, JP</span></td>
@@ -879,7 +879,7 @@
     <div class="section-desc">WebSocket-based port forwarding from Mother to Children</div>
   </div>
 
-  <div class="tunnel-list">
+  <div class="tunnel-list" id="tunnels-list">
     <div class="tunnel-card">
       <div class="tunnel-indicator"></div>
       <div class="tunnel-info">
@@ -944,7 +944,7 @@
 </div>
 
 <script>
-// Generate particles
+// === Particles ===
 const particlesEl = document.getElementById('particles');
 for (let i = 0; i < 40; i++) {
   const p = document.createElement('div');
@@ -962,6 +962,166 @@ for (let i = 0; i < 40; i++) {
   `;
   particlesEl.appendChild(p);
 }
+
+// === API Client ===
+const API = {
+  async fetch(path) {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json();
+  },
+  async getStats() { return this.fetch('/api/stats'); },
+  async getChildren() { return this.fetch('/api/children'); },
+  async getTasks() { return this.fetch('/api/tasks'); },
+  async getTunnels() { return this.fetch('/api/tunnels'); },
+};
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+}
+
+function fmtUptime(sec) {
+  if (!sec || sec < 0) return '—';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
+}
+
+// === Render functions ===
+function renderStats(data) {
+  const el = document.getElementById('hero-stats');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="hero-stat"><div class="hero-stat-value">${data.children || 0}</div><div class="hero-stat-label">ACTIVE CHILDREN</div></div>
+    <div class="hero-stat"><div class="hero-stat-value">${data.tunnels || 0}</div><div class="hero-stat-label">ACTIVE TUNNELS</div></div>
+    <div class="hero-stat"><div class="hero-stat-value">${data.tasks_completed || 0}</div><div class="hero-stat-label">TASKS DONE</div></div>
+  `;
+}
+
+function renderChildren(children) {
+  const tbody = document.getElementById('children-tbody');
+  if (!tbody) return;
+
+  if (!children || children.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;">No children connected. Deploy one!</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = children.map(c => `
+    <tr class="child-row">
+      <td><div class="child-name">${esc(c.hostname || c.id)}</div><div class="child-location">${c.id}</div></td>
+      <td><span class="child-location">${c.os || '?'} / ${c.arch || '?'}</span></td>
+      <td><span class="status-badge status-online">Online</span></td>
+      <td>${c.cpu ? c.cpu.toFixed(1)+'%' : '—'}</td>
+      <td>${c.mem_used ? formatBytes(c.mem_used)+' / '+formatBytes(c.mem_total) : '—'}</td>
+      <td>${fmtUptime(c.uptime)}</td>
+      <td style="font-size:0.75rem;color:var(--pink);">✦ online</td>
+    </tr>
+  `).join('');
+}
+
+function renderTunnels(tunnels) {
+  const el = document.getElementById('tunnels-list');
+  if (!el) return;
+
+  if (!tunnels || tunnels.length === 0) {
+    el.innerHTML = `<div style="color:rgba(245,245,245,0.2);padding:24px;text-align:center;grid-column:span 2;">No active tunnels</div>`;
+    return;
+  }
+
+  el.innerHTML = tunnels.map(t => `
+    <div class="tunnel-card">
+      <div class="tunnel-indicator"></div>
+      <div class="tunnel-info">
+        <div class="tunnel-name">${esc(t.id)}</div>
+        <div class="tunnel-detail">:${t.listen_port} → ${esc(t.child_id)}@${esc(t.target)}</div>
+      </div>
+      <div class="tunnel-traffic">↑ ${formatBytes(t.bytes_in)}</div>
+    </div>
+  `).join('');
+}
+
+function renderDashboardGrid(stats) {
+  // Update stat cards
+  const cards = document.querySelectorAll('.dashboard-grid .card');
+  if (cards.length >= 1) {
+    cards[0].querySelector('.card-stat').innerHTML = stats.children || 0;
+  }
+  if (cards.length >= 5) {
+    cards[4].querySelector('.card-stat').innerHTML = stats.tasks_total || 0;
+    cards[4].querySelector('.card-desc').textContent = `${stats.tasks_completed || 0} completed`;
+  }
+  if (cards.length >= 6) {
+    cards[5].querySelector('.card-stat').innerHTML = `${stats.tunnels || 0}/${stats.tunnels || 0} <span class="card-stat-label">healthy</span>`;
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// === Main loop ===
+let lastError = null;
+
+async function refresh() {
+  try {
+    const [stats, childrenData, tunnelsData] = await Promise.all([
+      API.getStats(),
+      API.getChildren(),
+      API.getTunnels(),
+    ]);
+
+    renderStats(stats);
+    renderChildren(childrenData.children);
+    renderTunnels(tunnelsData.tunnels);
+    renderDashboardGrid(stats);
+    lastError = null;
+
+    // Footer
+    const footer = document.querySelector('.footer');
+    if (footer) {
+      footer.textContent = `hxの偷吃 · ${stats.children || 0} children · ${stats.tunnels || 0} tunnels · ${stats.tasks_completed || 0} tasks done`;
+    }
+
+  } catch (err) {
+    if (lastError !== err.message) {
+      console.warn('[webui] refresh error:', err.message);
+      lastError = err.message;
+      const footer = document.querySelector('.footer');
+      if (footer) footer.textContent = 'hxの偷吃 · Mother offline — API unreachable';
+    }
+  }
+}
+
+// SSE for real-time updates
+function listenSSE() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'child_registered' || data.type === 'child_disconnected' ||
+          data.type === 'child_report' || data.type === 'task_completed') {
+        refresh();
+      }
+    } catch {}
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(listenSSE, 5000);
+  };
+}
+
+// Start
+refresh();
+listenSSE();
+setInterval(refresh, 10000);
 </script>
 </body>
 </html>

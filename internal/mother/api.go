@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -15,11 +14,31 @@ var webAssets embed.FS
 
 // SetupRoutes registers all HTTP routes on the given mux.
 func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
-	// API routes
+	// API — Children
 	mux.HandleFunc("/api/children", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, hub.ListChildren())
+		switch r.Method {
+		case "GET":
+			children := hub.ListChildren()
+			writeJSON(w, map[string]interface{}{
+				"children": children,
+				"count":    len(children),
+			})
+		case "DELETE":
+			// Disconnect a child
+			id := r.URL.Query().Get("id")
+			hub.mu.Lock()
+			if child, ok := hub.children[id]; ok {
+				child.Conn.Close()
+				delete(hub.children, id)
+			}
+			hub.mu.Unlock()
+			writeJSON(w, map[string]string{"status": "disconnected"})
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
 	})
 
+	// API — Tasks
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "POST":
@@ -33,34 +52,38 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 				writeJSON(w, map[string]string{"error": err.Error()})
 				return
 			}
-			taskID := generateID()
-			err := hub.SendTask(req.ChildID, taskID, req.Command, req.Args, req.Timeout)
+			record, err := hub.SubmitTask(req.ChildID, req.Command, req.Args, req.Timeout)
 			if err != nil {
 				writeJSON(w, map[string]string{"error": err.Error()})
 				return
 			}
-			writeJSON(w, map[string]string{"task_id": taskID})
+			writeJSON(w, record)
 
 		case "GET":
-			hub.taskMu.RLock()
-			defer hub.taskMu.RUnlock()
-			var results []map[string]interface{}
-			for id, r := range hub.taskResults {
-				results = append(results, map[string]interface{}{
-					"task_id":   id,
-					"exit_code": r.ExitCode,
-					"stdout":    r.Stdout,
-					"stderr":    r.Stderr,
-					"duration":  r.Duration,
-				})
-			}
-			writeJSON(w, results)
+			childID := r.URL.Query().Get("child_id")
+			tasks := hub.ListTasks(childID)
+			writeJSON(w, map[string]interface{}{
+				"tasks": tasks,
+				"count": len(tasks),
+			})
 
 		default:
 			http.Error(w, "method not allowed", 405)
 		}
 	})
 
+	// API — Single task
+	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.URL.Path[len("/api/tasks/"):]
+		task := hub.GetTask(taskID)
+		if task == nil {
+			writeJSON(w, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, task)
+	})
+
+	// API — Tunnels
 	mux.HandleFunc("/api/tunnels", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "POST":
@@ -68,6 +91,9 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeJSON(w, map[string]string{"error": err.Error()})
 				return
+			}
+			if req.ID == "" {
+				req.ID = generateID()
 			}
 			tunnel, err := tm.OpenTunnel(req.ID, req.ChildID, req.Target, req.ListenPort)
 			if err != nil {
@@ -77,37 +103,55 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 			writeJSON(w, tunnel)
 
 		case "GET":
-			writeJSON(w, tm.ListTunnels())
-
-		case "DELETE":
-			id := r.URL.Query().Get("id")
-			if err := tm.CloseTunnel(id); err != nil {
-				writeJSON(w, map[string]string{"error": err.Error()})
-				return
-			}
-			writeJSON(w, map[string]string{"status": "closed"})
+			writeJSON(w, map[string]interface{}{
+				"tunnels": tm.ListTunnels(),
+				"count":   len(tm.ListTunnels()),
+			})
 
 		default:
 			http.Error(w, "method not allowed", 405)
 		}
 	})
 
+	// API — Single tunnel
+	mux.HandleFunc("/api/tunnels/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "DELETE":
+			tunnelID := r.URL.Path[len("/api/tunnels/"):]
+			if err := tm.CloseTunnel(tunnelID); err != nil {
+				writeJSON(w, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, map[string]string{"status": "closed"})
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
+	})
+
+	// API — Stats
 	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		count := hub.Count()
-		tunnelCount := len(tm.ListTunnels())
+		tasks := hub.ListTasks("")
+		completed := 0
+		for _, t := range tasks {
+			if t.Status == TaskCompleted || t.Status == TaskFailed {
+				completed++
+			}
+		}
 		writeJSON(w, map[string]interface{}{
-			"children": count,
-			"tunnels":  tunnelCount,
-			"uptime":   time.Now().Unix(),
+			"children":        hub.Count(),
+			"tunnels":         len(tm.ListTunnels()),
+			"tasks_total":     len(tasks),
+			"tasks_completed": completed,
+			"uptime":          time.Now().Unix(),
 		})
 	})
 
-	// SSE events
+	// API — Events (SSE)
 	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
 		WriteSSE(w, hub.Events())
 	})
 
-	// WS endpoint for children
+	// WS for children
 	mux.HandleFunc("/ws", hub.HandleWS)
 
 	// WebUI
@@ -130,11 +174,6 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
-}
-
-func atoi(s string) int {
-	n, _ := strconv.Atoi(s)
-	return n
 }
 
 const indexFallback = `<!DOCTYPE html>

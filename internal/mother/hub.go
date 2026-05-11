@@ -39,8 +39,7 @@ type Hub struct {
 	children map[string]*ChildState
 
 	// Tasks
-	taskResults map[string]*protocol.TaskResultPayload
-	taskMu      sync.RWMutex
+	taskQueue *TaskQueue
 
 	// PSK for simple auth
 	psk string
@@ -51,12 +50,13 @@ type Hub struct {
 
 // NewHub creates a new Hub.
 func NewHub(psk string) *Hub {
-	return &Hub{
-		children:    make(map[string]*ChildState),
-		taskResults: make(map[string]*protocol.TaskResultPayload),
-		psk:         psk,
-		events:      make(chan interface{}, 256),
+	h := &Hub{
+		children: make(map[string]*ChildState),
+		psk:      psk,
+		events:   make(chan interface{}, 256),
 	}
+	h.taskQueue = NewTaskQueue(h)
+	return h
 }
 
 // HandleWS handles a WebSocket upgrade and manages the child lifecycle.
@@ -161,10 +161,10 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 	case protocol.TypeTaskResult:
 		var payload protocol.TaskResultPayload
 		h.decodePayload(msg.Payload, &payload)
-		h.taskMu.Lock()
-		h.taskResults[payload.TaskID] = &payload
-		h.taskMu.Unlock()
-		log.Printf("[hub] child %s task %s done: exit=%d", child.ID, payload.TaskID, payload.ExitCode)
+		h.taskQueue.CompleteTask(payload.TaskID, &payload)
+		h.broadcastEvent("task_completed", map[string]interface{}{
+			"task_id": payload.TaskID, "exit_code": payload.ExitCode, "child_id": child.ID,
+		})
 
 	case protocol.TypeTunnelOpen:
 		var payload protocol.TunnelOpenPayload
@@ -178,8 +178,23 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 	}
 }
 
-// SendTask sends a task to a specific child.
-func (h *Hub) SendTask(childID, taskID, command string, args []string, timeout int) error {
+// SubmitTask submits a task to a child via the queue.
+func (h *Hub) SubmitTask(childID, command string, args []string, timeout int) (*TaskRecord, error) {
+	return h.taskQueue.Submit(childID, command, args, timeout)
+}
+
+// ListTasks returns all tasks.
+func (h *Hub) ListTasks(childID string) []*TaskRecord {
+	return h.taskQueue.ListTasks(childID)
+}
+
+// GetTask returns a task by ID.
+func (h *Hub) GetTask(taskID string) *TaskRecord {
+	return h.taskQueue.GetTask(taskID)
+}
+
+// sendTask sends a task payload directly to a child (used internally by TaskQueue).
+func (h *Hub) sendTask(childID, taskID, command string, args []string, timeout int) error {
 	h.mu.RLock()
 	child, ok := h.children[childID]
 	h.mu.RUnlock()

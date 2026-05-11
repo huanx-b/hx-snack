@@ -28,6 +28,7 @@ type Agent struct {
 	childID   string
 	stop      chan struct{}
 	reconnect time.Duration
+	monitor   *Monitor
 }
 
 // NewAgent creates a new child agent.
@@ -38,6 +39,7 @@ func NewAgent(motherURL, psk, version string) *Agent {
 		Version:   version,
 		stop:      make(chan struct{}),
 		reconnect: 1 * time.Second,
+		monitor:   NewMonitor(),
 	}
 }
 
@@ -161,7 +163,7 @@ func (a *Agent) monitorLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			report := collectReport()
+			report := a.monitor.Collect()
 			msg := protocol.NewMessage(protocol.TypeReport, report)
 			if err := a.send(msg); err != nil {
 				return
@@ -268,21 +270,6 @@ func (a *Agent) Close() {
 		a.conn.Close()
 	}
 	a.mu.Unlock()
-}
-
-// collectReport gathers system stats. Falls back to basic info if gopsutil unavailable.
-func collectReport() protocol.ReportPayload {
-	r := protocol.ReportPayload{}
-	// In full build with gopsutil:
-	// cpu, _ := cpu.Percent(0, false)
-	// mem, _ := mem.VirtualMemory()
-	// etc.
-	// For now return stub
-	r.CPUPercent = 0
-	r.MemUsedBytes = 0
-	r.MemTotalBytes = 0
-	r.UptimeSeconds = 0
-	return r
 }
 
 func decode(src, dst interface{}) {
