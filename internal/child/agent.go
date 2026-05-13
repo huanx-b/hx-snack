@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -24,6 +26,15 @@ type Agent struct {
 	PSK       string
 	Version   string
 
+	// SSH tunnel
+	SSHTunnel  bool
+	SSHHost    string
+	SSHPort    string
+	SSHUser    string
+	SSHKey     string
+	SSHPass    string
+	TunnelPort string
+
 	conn      *websocket.Conn
 	mu        sync.Mutex
 	childID   string
@@ -33,6 +44,8 @@ type Agent struct {
 
 	tunnelMu      sync.RWMutex
 	tunnelStreams map[string]chan []byte
+
+	tunnelCmd *exec.Cmd // SSH tunnel process
 }
 
 // NewAgent creates a new child agent.
@@ -49,6 +62,12 @@ func NewAgent(motherURL, psk, version string) *Agent {
 
 // Run starts the agent loop.
 func (a *Agent) Run(ctx context.Context) error {
+	// Start SSH tunnel if enabled
+	if a.SSHTunnel {
+		if err := a.startSSHTunnel(); err != nil {
+			log.Printf("SSH tunnel failed: %v (will retry)", err)
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -56,6 +75,17 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-a.stop:
 			return nil
 		default:
+		}
+
+		// Check tunnel health if enabled
+		if a.SSHTunnel && a.tunnelCmd != nil {
+			if a.tunnelCmd.ProcessState != nil && a.tunnelCmd.ProcessState.Exited() {
+				a.stopSSHTunnel()
+				time.Sleep(1 * time.Second)
+				if err := a.startSSHTunnel(); err != nil {
+					log.Printf("SSH tunnel reconnect failed: %v", err)
+				}
+			}
 		}
 
 		err := a.connect(ctx)
@@ -80,6 +110,10 @@ func (a *Agent) Run(ctx context.Context) error {
 
 func (a *Agent) connect(ctx context.Context) error {
 	url := a.MotherURL
+	// Route through SSH tunnel
+	if a.SSHTunnel && a.TunnelPort != "" {
+		url = replaceHostPort(url, "localhost:"+a.TunnelPort)
+	}
 	if a.PSK != "" {
 		if url[len(url)-1] != '?' {
 			url += "?"
@@ -356,6 +390,96 @@ func (a *Agent) Close() {
 		a.conn.Close()
 	}
 	a.mu.Unlock()
+	a.stopSSHTunnel()
+}
+
+// startSSHTunnel runs: ssh -N -L tunnelPort:localhost:10300 user@host
+func (a *Agent) startSSHTunnel() error {
+	if a.SSHHost == "" {
+		return nil
+	}
+	args := []string{
+		"-N",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "ServerAliveInterval=30",
+		"-o", "ExitOnForwardFailure=yes",
+		"-p", a.SSHPort,
+		"-L", a.TunnelPort + ":localhost:10300",
+	}
+	if a.SSHKey != "" {
+		args = append(args, "-i", a.SSHKey)
+	}
+	args = append(args, a.SSHUser+"@"+a.SSHHost)
+
+	cmd := exec.Command("ssh", args...)
+	if a.SSHPass != "" {
+		cmd.Stdin = stringsReader(a.SSHPass + "\n")
+	}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ssh: %w", err)
+	}
+	// Wait briefly for the tunnel to establish
+	time.Sleep(1500 * time.Millisecond)
+	// If exited immediately, tunnel failed
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		return fmt.Errorf("ssh tunnel exited immediately")
+	}
+	a.tunnelCmd = cmd
+	log.Printf("SSH tunnel established: localhost:%s → %s:10300", a.TunnelPort, a.SSHHost)
+	return nil
+}
+
+func (a *Agent) stopSSHTunnel() {
+	if a.tunnelCmd == nil {
+		return
+	}
+	if a.tunnelCmd.Process != nil {
+		a.tunnelCmd.Process.Kill()
+	}
+	a.tunnelCmd = nil
+}
+
+// replaceHostPort replaces host:port in a ws:// URL
+func replaceHostPort(url, newHostPort string) string {
+	// ws://host:port/path → ws://newHostPort/path
+	s := url
+	if i := idxStr(s, "://"); i >= 0 {
+		s = s[i+3:]
+		prefix := url[:i+3]
+		if j := idxStr(s, "/"); j >= 0 {
+			return prefix + newHostPort + s[j:]
+		}
+		return prefix + newHostPort
+	}
+	return url
+}
+
+func idxStr(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func stringsReader(s string) *stringsReaderImpl { return &stringsReaderImpl{s: s} }
+
+type stringsReaderImpl struct {
+	s string
+	i int
+}
+
+func (r *stringsReaderImpl) Read(p []byte) (int, error) {
+	if r.i >= len(r.s) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.s[r.i:])
+	r.i += n
+	return n, nil
 }
 
 func decode(src, dst interface{}) {
