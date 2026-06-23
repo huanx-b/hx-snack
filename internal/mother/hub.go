@@ -27,6 +27,7 @@ type ChildState struct {
 	Arch          string
 	Version       string
 	RemoteAddr    string
+	Transport     string
 	Conn          *websocket.Conn
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
@@ -52,6 +53,10 @@ type Hub struct {
 	tunnelMu      sync.RWMutex
 	tunnelStreams map[string]chan []byte
 	tunnelReady   map[string]chan struct{}
+
+	// HTTP long-poll child transport
+	httpMu     sync.RWMutex
+	httpQueues map[string]chan protocol.Message
 }
 
 // NewHub creates a new Hub.
@@ -62,6 +67,7 @@ func NewHub(psk string) *Hub {
 		events:   make(chan interface{}, 256),
 	}
 	h.taskQueue = NewTaskQueue(h)
+	go h.reapHTTPChildren()
 	return h
 }
 
@@ -87,6 +93,7 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	child := &ChildState{
 		ID:          childID,
 		RemoteAddr:  remoteAddr,
+		Transport:   "ws",
 		Conn:        conn,
 		ConnectedAt: time.Now(),
 	}
@@ -148,6 +155,21 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 		child.LastHeartbeat = time.Now()
 		child.mu.Unlock()
 
+		// Dedup by hostname: evict older connections from same hostname
+		if payload.Hostname != "" {
+			h.mu.Lock()
+			for oldID, oldChild := range h.children {
+				if oldID != child.ID && oldChild.Hostname == payload.Hostname {
+					log.Printf("[hub] dedup: evicting old child %s (same hostname %s)", oldID, payload.Hostname)
+					delete(h.children, oldID)
+					if oldChild.Conn != nil {
+						oldChild.Conn.Close()
+					}
+				}
+			}
+			h.mu.Unlock()
+		}
+
 		resp := protocol.NewMessage(protocol.TypeRegistered, protocol.RegisteredPayload{
 			ChildID:    child.ID,
 			HeartbeatS: 5,
@@ -169,7 +191,7 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 			"id": child.ID, "report": &payload,
 		})
 
-case protocol.TypeTaskResult:
+	case protocol.TypeTaskResult:
 		var payload protocol.TaskResultPayload
 		h.decodePayload(msg.Payload, &payload)
 		h.taskQueue.CompleteTask(payload.TaskID, &payload)
@@ -252,7 +274,7 @@ func (h *Hub) ListChildren() []ChildInfo {
 
 	var list []ChildInfo
 	for _, c := range h.children {
-		c.mu.Lock()
+		locked := c.mu.TryLock()
 		info := ChildInfo{
 			ID:         c.ID,
 			Hostname:   c.Hostname,
@@ -260,18 +282,21 @@ func (h *Hub) ListChildren() []ChildInfo {
 			Arch:       c.Arch,
 			Version:    c.Version,
 			RemoteAddr: c.RemoteAddr,
+			Transport:  c.Transport,
 			Connected:  c.ConnectedAt,
-			LastHB:     c.LastHeartbeat,
 		}
-		if c.LastReport != nil {
-			info.CPU = c.LastReport.CPUPercent
-			info.MemUsed = c.LastReport.MemUsedBytes
-			info.MemTotal = c.LastReport.MemTotalBytes
-			info.NetRx = c.LastReport.NetRxBytes
-			info.NetTx = c.LastReport.NetTxBytes
-			info.Uptime = c.LastReport.UptimeSeconds
+		if locked {
+			info.LastHB = c.LastHeartbeat
+			if c.LastReport != nil {
+				info.CPU = c.LastReport.CPUPercent
+				info.MemUsed = c.LastReport.MemUsedBytes
+				info.MemTotal = c.LastReport.MemTotalBytes
+				info.NetRx = c.LastReport.NetRxBytes
+				info.NetTx = c.LastReport.NetTxBytes
+				info.Uptime = c.LastReport.UptimeSeconds
+			}
+			c.mu.Unlock()
 		}
-		c.mu.Unlock()
 		list = append(list, info)
 	}
 	return list
@@ -290,6 +315,9 @@ func (h *Hub) Events() <-chan interface{} {
 }
 
 func (h *Hub) send(child *ChildState, msg protocol.Message) error {
+	if child.Transport == "http" {
+		return h.sendHTTP(child, msg)
+	}
 	data, err := msgpack.Marshal(msg)
 	if err != nil {
 		return err
@@ -307,7 +335,10 @@ func (h *Hub) broadcastEvent(eventType string, data interface{}) {
 }
 
 func (h *Hub) decodePayload(src, dst interface{}) {
-	// msgpack packs payload as map; re-encode and decode to target struct
+	jb, _ := json.Marshal(src)
+	if err := json.Unmarshal(jb, dst); err == nil {
+		return
+	}
 	b, _ := msgpack.Marshal(src)
 	msgpack.Unmarshal(b, dst)
 }
@@ -326,6 +357,7 @@ type ChildInfo struct {
 	Arch       string    `json:"arch"`
 	Version    string    `json:"version"`
 	RemoteAddr string    `json:"remote_addr"`
+	Transport  string    `json:"transport"`
 	Connected  time.Time `json:"connected_at"`
 	LastHB     time.Time `json:"last_heartbeat"`
 	CPU        float64   `json:"cpu"`

@@ -11,9 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/vmihailenco/msgpack/v5"
-
 	"github.com/huanxherta/hx-snack/internal/protocol"
 )
 
@@ -33,13 +30,13 @@ type Tunnel struct {
 
 // TunnelPool groups tunnels sharing the same port for load balancing.
 type TunnelPool struct {
-	Port      int
-	Target    string
-	listener  net.Listener
-	backends  []*Tunnel
-	nextIdx   uint64
-	mu        sync.Mutex
-	cancel    chan struct{}
+	Port     int
+	Target   string
+	listener net.Listener
+	backends []*Tunnel
+	nextIdx  uint64
+	mu       sync.Mutex
+	cancel   chan struct{}
 }
 
 // TunnelManager manages tunnels and pools.
@@ -188,10 +185,7 @@ func (tm *TunnelManager) handleBidirConn(t *Tunnel, conn net.Conn) {
 	})
 	log.Printf("[tunnel] bidir: %s registered stream", streamID)
 
-	child.mu.Lock()
-	b, _ := msgpack.Marshal(openMsg)
-	err := child.Conn.WriteMessage(websocket.BinaryMessage, b)
-	child.mu.Unlock()
+	err := tm.hub.send(child, openMsg)
 	if err != nil {
 		log.Printf("[tunnel] bidir: %s write tunnel_open error: %v", streamID, err)
 		return
@@ -227,10 +221,9 @@ func (tm *TunnelManager) handleBidirConn(t *Tunnel, conn net.Conn) {
 			TunnelID: streamID,
 			Data:     data,
 		})
-		child.mu.Lock()
-		mb, _ := msgpack.Marshal(msg)
-		child.Conn.WriteMessage(websocket.BinaryMessage, mb)
-		child.mu.Unlock()
+		if err := tm.hub.send(child, msg); err != nil {
+			return
+		}
 
 		t.mu.Lock()
 		t.BytesIn += uint64(n)

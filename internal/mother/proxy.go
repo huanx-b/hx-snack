@@ -3,16 +3,12 @@ package mother
 import (
 	"bufio"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
-	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/huanxherta/hx-snack/internal/protocol"
 )
@@ -37,10 +33,11 @@ func (h *Hub) ProxyHTTP(target string, w http.ResponseWriter, r *http.Request) {
 		TunnelID: streamID,
 		Target:   target,
 	})
-	child.mu.Lock()
-	b, _ := msgpack.Marshal(openMsg)
-	child.Conn.WriteMessage(websocket.BinaryMessage, b)
-	child.mu.Unlock()
+	if err := h.send(child, openMsg); err != nil {
+		log.Printf("[proxy] %s tunnel_open error: %v", streamID, err)
+		http.Error(w, "tunnel open failed", 502)
+		return
+	}
 
 	select {
 	case <-readyCh:
@@ -49,7 +46,7 @@ func (h *Hub) ProxyHTTP(target string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pw := &proxyWriter{child: child, streamID: streamID}
+	pw := &proxyWriter{hub: h, child: child, streamID: streamID}
 	pr := &proxyReader{ch: dataCh}
 
 	// Determine scheme
@@ -129,7 +126,9 @@ func (h *Hub) pickChild() *ChildState {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, c := range h.children {
-		return c
+		if c.Transport == "ws" && c.Conn != nil {
+			return c
+		}
 	}
 	return nil
 }
@@ -165,11 +164,11 @@ type tunnelConn struct {
 	host   string
 }
 
-func (tc *tunnelConn) Read(b []byte) (int, error)  { return tc.reader.Read(b) }
-func (tc *tunnelConn) Write(b []byte) (int, error) { return tc.writer.Write(b) }
-func (tc *tunnelConn) Close() error                 { return nil }
-func (tc *tunnelConn) LocalAddr() net.Addr          { return fakeAddr("tunnel") }
-func (tc *tunnelConn) RemoteAddr() net.Addr         { return fakeAddr(tc.host) }
+func (tc *tunnelConn) Read(b []byte) (int, error)         { return tc.reader.Read(b) }
+func (tc *tunnelConn) Write(b []byte) (int, error)        { return tc.writer.Write(b) }
+func (tc *tunnelConn) Close() error                       { return nil }
+func (tc *tunnelConn) LocalAddr() net.Addr                { return fakeAddr("tunnel") }
+func (tc *tunnelConn) RemoteAddr() net.Addr               { return fakeAddr(tc.host) }
 func (tc *tunnelConn) SetDeadline(t time.Time) error      { return nil }
 func (tc *tunnelConn) SetReadDeadline(t time.Time) error  { return nil }
 func (tc *tunnelConn) SetWriteDeadline(t time.Time) error { return nil }
@@ -181,6 +180,7 @@ func (f fakeAddr) String() string  { return string(f) }
 
 // proxyWriter writes to the child's WS as tunnel_data.
 type proxyWriter struct {
+	hub      *Hub
 	child    *ChildState
 	streamID string
 }
@@ -190,12 +190,8 @@ func (pw *proxyWriter) Write(p []byte) (int, error) {
 		TunnelID: pw.streamID,
 		Data:     p,
 	})
-	pw.child.mu.Lock()
-	b, _ := msgpack.Marshal(msg)
-	err := pw.child.Conn.WriteMessage(websocket.BinaryMessage, b)
-	pw.child.mu.Unlock()
-	if err != nil {
-		return 0, fmt.Errorf("ws write: %w", err)
+	if err := pw.hub.send(pw.child, msg); err != nil {
+		return 0, err
 	}
 	return len(p), nil
 }

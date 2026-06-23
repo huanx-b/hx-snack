@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,12 +38,15 @@ type Agent struct {
 	SSHPass    string
 	TunnelPort string
 
-	conn      *websocket.Conn
-	mu        sync.Mutex
-	childID   string
-	stop      chan struct{}
-	reconnect time.Duration
-	monitor   *Monitor
+	conn       *websocket.Conn
+	httpBase   string
+	httpMode   bool
+	httpClient *http.Client
+	mu         sync.Mutex
+	childID    string
+	stop       chan struct{}
+	reconnect  time.Duration
+	monitor    *Monitor
 
 	tunnelMu      sync.RWMutex
 	tunnelStreams map[string]chan []byte
@@ -51,12 +57,13 @@ type Agent struct {
 // NewAgent creates a new child agent.
 func NewAgent(motherURL, psk, version string) *Agent {
 	return &Agent{
-		MotherURL: motherURL,
-		PSK:       psk,
-		Version:   version,
-		stop:      make(chan struct{}),
-		reconnect: 1 * time.Second,
-		monitor:   NewMonitor(),
+		MotherURL:  motherURL,
+		PSK:        psk,
+		Version:    version,
+		stop:       make(chan struct{}),
+		reconnect:  1 * time.Second,
+		monitor:    NewMonitor(),
+		httpClient: &http.Client{Timeout: 70 * time.Second},
 	}
 }
 
@@ -89,6 +96,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 
 		err := a.connect(ctx)
+		if err != nil && strings.HasPrefix(a.MotherURL, "http") {
+			err = a.connectHTTP(ctx)
+		}
 		if err != nil {
 			log.Printf("connection failed: %v, retrying in %v", err, a.reconnect)
 			select {
@@ -109,6 +119,9 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) connect(ctx context.Context) error {
+	if strings.HasPrefix(a.MotherURL, "http://") || strings.HasPrefix(a.MotherURL, "https://") {
+		return a.connectHTTP(ctx)
+	}
 	url := a.MotherURL
 	// Route through SSH tunnel
 	if a.SSHTunnel && a.TunnelPort != "" {
@@ -371,6 +384,9 @@ func (a *Agent) executeTask(task *protocol.TaskPayload) {
 }
 
 func (a *Agent) send(msg protocol.Message) error {
+	if a.httpMode {
+		return a.httpPostMessages(context.Background(), []protocol.Message{msg})
+	}
 	data, err := msgpack.Marshal(msg)
 	if err != nil {
 		return err
@@ -483,6 +499,10 @@ func (r *stringsReaderImpl) Read(p []byte) (int, error) {
 }
 
 func decode(src, dst interface{}) {
+	jb, _ := json.Marshal(src)
+	if err := json.Unmarshal(jb, dst); err == nil {
+		return
+	}
 	b, _ := msgpack.Marshal(src)
 	msgpack.Unmarshal(b, dst)
 }

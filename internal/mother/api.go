@@ -97,11 +97,21 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 			// Disconnect a child
 			id := r.URL.Query().Get("id")
 			hub.mu.Lock()
-			if child, ok := hub.children[id]; ok {
-				child.Conn.Close()
+			child, ok := hub.children[id]
+			if ok {
 				delete(hub.children, id)
 			}
 			hub.mu.Unlock()
+			if ok && child.Transport == "http" {
+				hub.httpMu.Lock()
+				if q, ok := hub.httpQueues[id]; ok {
+					close(q)
+					delete(hub.httpQueues, id)
+				}
+				hub.httpMu.Unlock()
+			} else if ok && child.Conn != nil {
+				child.Conn.Close()
+			}
 			writeJSON(w, map[string]string{"status": "disconnected"})
 		default:
 			http.Error(w, "method not allowed", 405)
@@ -265,6 +275,9 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(data)
 	})
+
+	// HTTP child long-poll transport
+	SetupHTTPChildRoutes(mux, hub)
 
 	// WS for children (both /ws and /api/stream for stealth)
 	mux.HandleFunc("/ws", hub.HandleWS)
