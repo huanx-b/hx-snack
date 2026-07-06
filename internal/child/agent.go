@@ -1,6 +1,7 @@
 package child
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -96,9 +97,6 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 
 		err := a.connect(ctx)
-		if err != nil && strings.HasPrefix(a.MotherURL, "http") {
-			err = a.connectHTTP(ctx)
-		}
 		if err != nil {
 			log.Printf("connection failed: %v, retrying in %v", err, a.reconnect)
 			select {
@@ -138,7 +136,14 @@ func (a *Agent) connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer a.closeConn(conn)
+
+	if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+		return err
+	}
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsReadWait))
+	})
 
 	a.mu.Lock()
 	a.conn = conn
@@ -178,6 +183,9 @@ func (a *Agent) connect(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+			return err
+		}
 
 		var msg protocol.Message
 		if err := msgpack.Unmarshal(raw, &msg); err != nil {
@@ -200,6 +208,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		case <-time.After(interval):
 			msg := protocol.NewMessage(protocol.TypeHeartbeat, protocol.HeartbeatPayload{Seq: seq})
 			if err := a.send(msg); err != nil {
+				a.closeCurrentConn()
 				return // silent, don't log heartbeat errors
 			}
 			seq++
@@ -225,6 +234,7 @@ func (a *Agent) monitorLoop(ctx context.Context) {
 			report := a.monitor.Collect()
 			msg := protocol.NewMessage(protocol.TypeReport, report)
 			if err := a.send(msg); err != nil {
+				a.closeCurrentConn()
 				return
 			}
 		}
@@ -237,6 +247,7 @@ func (a *Agent) handleMessage(msg *protocol.Message) {
 		var payload protocol.RegisteredPayload
 		decode(msg.Payload, &payload)
 		a.childID = payload.ChildID
+		a.reconnect = 1 * time.Second
 		// silent
 
 	case protocol.TypeHeartbeat:
@@ -346,41 +357,80 @@ func (a *Agent) executeTask(task *protocol.TaskPayload) {
 
 	cmd := exec.CommandContext(ctx, task.Command, task.Args...)
 	if task.Env != nil {
+		cmd.Env = os.Environ()
 		for k, v := range task.Env {
-			cmd.Env = append(os.Environ(), k+"="+v)
+			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	finish := func(exitCode int, stdout, stderr string, stdoutTruncated, stderrTruncated bool) {
+		result := protocol.NewMessage(protocol.TypeTaskResult, protocol.TaskResultPayload{
+			TaskID:          task.TaskID,
+			ExitCode:        exitCode,
+			Stdout:          stdout,
+			Stderr:          stderr,
+			Duration:        time.Since(start).Milliseconds(),
+			StdoutTruncated: stdoutTruncated,
+			StderrTruncated: stderrTruncated,
+		})
+		if err := a.send(result); err != nil {
+			// silent
+		}
+	}
 
-	var outBuf, errBuf []byte
-	// Simple run — read all output
-	cmd.Start()
-	outBuf, _ = readAll(stdout)
-	errBuf, _ = readAll(stderr)
-	err := cmd.Wait()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		finish(-1, "", err.Error(), false, false)
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		finish(-1, "", err.Error(), false, false)
+		return
+	}
+
+	outBuf := newLimitedBuffer(maxTaskOutputBytes)
+	errBuf := newLimitedBuffer(maxTaskOutputBytes)
+
+	if err := cmd.Start(); err != nil {
+		finish(-1, "", err.Error(), false, false)
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		io.Copy(outBuf, stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(errBuf, stderr)
+	}()
+
+	err = cmd.Wait()
+	wg.Wait()
 
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if ctx.Err() == context.DeadlineExceeded {
+			exitCode = -1
+			if errBuf.Len() > 0 {
+				errBuf.Write([]byte("\n"))
+			}
+			errBuf.Write([]byte("task timed out"))
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
+			if errBuf.Len() > 0 {
+				errBuf.Write([]byte("\n"))
+			}
+			errBuf.Write([]byte(err.Error()))
 		}
 	}
 
-	result := protocol.NewMessage(protocol.TypeTaskResult, protocol.TaskResultPayload{
-		TaskID:   task.TaskID,
-		ExitCode: exitCode,
-		Stdout:   string(outBuf),
-		Stderr:   string(errBuf),
-		Duration: time.Since(start).Milliseconds(),
-	})
-
-	if err := a.send(result); err != nil {
-		// silent
-	}
+	finish(exitCode, outBuf.String(), errBuf.String(), outBuf.Truncated(), errBuf.Truncated())
 }
 
 func (a *Agent) send(msg protocol.Message) error {
@@ -392,21 +442,50 @@ func (a *Agent) send(msg protocol.Message) error {
 		return err
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.conn == nil {
-		return nil
+		a.mu.Unlock()
+		return fmt.Errorf("websocket not connected")
 	}
-	return a.conn.WriteMessage(websocket.BinaryMessage, data)
+	conn := a.conn
+	if err := conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+		a.mu.Unlock()
+		a.closeConn(conn)
+		return err
+	}
+	err = conn.WriteMessage(websocket.BinaryMessage, data)
+	a.mu.Unlock()
+	if err != nil {
+		a.closeConn(conn)
+	}
+	return err
 }
 
 func (a *Agent) Close() {
 	close(a.stop)
+	a.closeCurrentConn()
+	a.stopSSHTunnel()
+}
+
+func (a *Agent) closeCurrentConn() {
 	a.mu.Lock()
-	if a.conn != nil {
-		a.conn.Close()
+	conn := a.conn
+	a.conn = nil
+	a.mu.Unlock()
+	if conn != nil {
+		conn.Close()
+	}
+}
+
+func (a *Agent) closeConn(conn *websocket.Conn) {
+	if conn == nil {
+		return
+	}
+	a.mu.Lock()
+	if a.conn == conn {
+		a.conn = nil
 	}
 	a.mu.Unlock()
-	a.stopSSHTunnel()
+	conn.Close()
 }
 
 // startSSHTunnel runs: ssh -N -L tunnelPort:localhost:10300 user@host
@@ -507,22 +586,54 @@ func decode(src, dst interface{}) {
 	msgpack.Unmarshal(b, dst)
 }
 
-func readAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
-	var buf []byte
-	tmp := make([]byte, 4096)
-	for {
-		n, err := r.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-		}
-		if err != nil {
-			return buf, err
-		}
-	}
-}
-
 func generateID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+const (
+	wsReadWait         = 75 * time.Second
+	wsWriteWait        = 10 * time.Second
+	maxTaskOutputBytes = 4 * 1024 * 1024
+)
+
+type limitedBuffer struct {
+	buf       bytes.Buffer
+	max       int
+	truncated bool
+}
+
+func newLimitedBuffer(max int) *limitedBuffer {
+	return &limitedBuffer{max: max}
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	remaining := b.max - b.buf.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		b.buf.Write(p[:remaining])
+		b.truncated = true
+		return len(p), nil
+	}
+	b.buf.Write(p)
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	return b.buf.String()
+}
+
+func (b *limitedBuffer) Len() int {
+	return b.buf.Len()
+}
+
+func (b *limitedBuffer) Truncated() bool {
+	return b.truncated
 }

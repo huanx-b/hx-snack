@@ -10,7 +10,7 @@ MOTHER_KEY = "REMOVED-KEY"
 
 # SSH 隧道（绕过端口封锁，22→10300）
 SSH_TUNNEL = False          # 启用 SSH 隧道
-SSH_HOST = "0.0.0.0.0.0.0"  # 母体 SSH 地址
+SSH_HOST = "0.0.0.0.0.0.0"  # 主控端 SSH 地址
 SSH_PORT = 22
 SSH_USER = "root"
 SSH_KEY  = ""               # 私钥路径（优先）
@@ -462,6 +462,8 @@ TYPE_TUNNEL_CLOSE = "tunnel_close"
 TYPE_TUNNEL_DATA  = "tunnel_data"
 TYPE_ERROR        = "error"
 
+MAX_TASK_OUTPUT_BYTES = 4 * 1024 * 1024
+
 
 def now_ms():
     return int(time.time() * 1000)
@@ -472,6 +474,12 @@ def make_msg(msg_type, payload=None):
     if payload is not None:
         msg["payload"] = payload
     return msg
+
+
+def limit_task_output(data):
+    if len(data) > MAX_TASK_OUTPUT_BYTES:
+        return data[:MAX_TASK_OUTPUT_BYTES], True
+    return data, False
 
 
 # ═══════════════════════════════════════════════
@@ -583,7 +591,7 @@ class Agent:
         self._tunnel_proc = None
 
     def _start_ssh_tunnel(self):
-        """建立 SSH 本地转发: localhost:TUNNEL_PORT → 母体:10300"""
+        """建立 SSH 本地转发: localhost:TUNNEL_PORT → 主控端:10300"""
         if self._tunnel_proc is not None:
             return True  # 已经在跑
         cmd = ["ssh",
@@ -743,11 +751,15 @@ class Agent:
             stderr = str(e).encode()
 
         duration = int((time.time() - start) * 1000)
+        stdout, stdout_truncated = limit_task_output(stdout)
+        stderr, stderr_truncated = limit_task_output(stderr)
         result = make_msg(TYPE_TASK_RESULT, {
             "task_id": task_id,
             "exit_code": exit_code,
             "stdout": stdout.decode("utf-8", errors="replace"),
             "stderr": stderr.decode("utf-8", errors="replace"),
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
             "duration_ms": duration,
         })
         self.send_msg(result)

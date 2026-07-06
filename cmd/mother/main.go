@@ -64,7 +64,7 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("[mother] hxの偷吃 Mother listening on %s", addr)
+	log.Printf("[mother] hx-snack listening on %s", addr)
 	log.Printf("[mother] WebUI: http://localhost%s", addr)
 	log.Printf("[mother] Children WS: ws://xxx%s/ws", addr)
 

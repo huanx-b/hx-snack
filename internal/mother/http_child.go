@@ -35,46 +35,62 @@ func (h *Hub) httpQueue(childID string) (chan protocol.Message, bool) {
 
 func (h *Hub) createHTTPChild(remoteAddr string, reg protocol.RegisterPayload) *ChildState {
 	h.ensureHTTPQueues()
-	childID := generateID()
+	clientIP := cleanClientIP(remoteAddr)
+	if clientIP == "" {
+		clientIP = "unknown"
+	}
+	childID := childIDFromIP(clientIP)
 	child := &ChildState{
 		ID:            childID,
 		Hostname:      reg.Hostname,
 		OS:            reg.OS,
 		Arch:          reg.Arch,
 		Version:       reg.Version,
-		RemoteAddr:    remoteAddr,
+		RemoteAddr:    clientIP,
 		Transport:     "http",
 		ConnectedAt:   time.Now(),
 		LastHeartbeat: time.Now(),
 	}
 
-	h.mu.Lock()
-	h.children[childID] = child
-	h.mu.Unlock()
+	replaced := h.replaceChild(child)
 
 	h.httpMu.Lock()
 	h.httpQueues[childID] = make(chan protocol.Message, 256)
 	h.httpMu.Unlock()
 
-	log.Printf("[hub] http child %s registered: %s (%s/%s)", child.ID, reg.Hostname, reg.OS, reg.Arch)
+	if replaced {
+		log.Printf("[hub] http child %s reconnected: %s (%s/%s)", child.ID, reg.Hostname, reg.OS, reg.Arch)
+	} else {
+		log.Printf("[hub] http child %s registered: %s (%s/%s)", child.ID, reg.Hostname, reg.OS, reg.Arch)
+	}
 	h.broadcastEvent("child_registered", map[string]interface{}{
 		"id": child.ID, "hostname": reg.Hostname, "os": reg.OS, "arch": reg.Arch, "transport": "http",
 	})
 	return child
 }
 
-func (h *Hub) removeHTTPChild(childID string) {
+func (h *Hub) removeHTTPChild(childID string, expected ...*ChildState) {
+	var child *ChildState
 	h.mu.Lock()
+	child = h.children[childID]
+	if child == nil || child.Transport != "http" || (len(expected) > 0 && expected[0] != nil && child != expected[0]) {
+		h.mu.Unlock()
+		return
+	}
 	delete(h.children, childID)
 	h.mu.Unlock()
 
+	h.closeHTTPQueue(childID)
+	h.broadcastEvent("child_disconnected", childID)
+}
+
+func (h *Hub) closeHTTPQueue(childID string) {
 	h.httpMu.Lock()
 	if q, ok := h.httpQueues[childID]; ok {
 		close(q)
 		delete(h.httpQueues, childID)
 	}
 	h.httpMu.Unlock()
-	h.broadcastEvent("child_disconnected", childID)
 }
 
 func (h *Hub) sendHTTP(child *ChildState, msg protocol.Message) error {
@@ -108,10 +124,7 @@ type httpChildPollResponse struct {
 }
 
 func remoteAddr(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
-	}
-	return r.RemoteAddr
+	return clientIPFromRequest(r)
 }
 
 func (h *Hub) requireHTTPChild(w http.ResponseWriter, r *http.Request) (*ChildState, bool) {
@@ -191,6 +204,9 @@ func SetupHTTPChildRoutes(mux *http.ServeMux, hub *Hub) {
 		case msg, ok := <-q:
 			if ok {
 				msgs = append(msgs, msg)
+			} else {
+				writeJSON(w, httpChildPollResponse{Messages: msgs})
+				return
 			}
 		case <-time.After(timeout):
 		}
@@ -199,6 +215,9 @@ func SetupHTTPChildRoutes(mux *http.ServeMux, hub *Hub) {
 			case msg, ok := <-q:
 				if ok {
 					msgs = append(msgs, msg)
+				} else {
+					writeJSON(w, httpChildPollResponse{Messages: msgs})
+					return
 				}
 			default:
 				writeJSON(w, httpChildPollResponse{Messages: msgs})

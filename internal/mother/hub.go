@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,7 +69,7 @@ func NewHub(psk string) *Hub {
 		events:   make(chan interface{}, 256),
 	}
 	h.taskQueue = NewTaskQueue(h)
-	go h.reapHTTPChildren()
+	go h.reapStaleChildren()
 	return h
 }
 
@@ -85,30 +87,37 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	childID := generateID()
-	remoteAddr := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		remoteAddr = xff
-	}
+	clientIP := clientIPFromRequest(r)
+	childID := childIDFromIP(clientIP)
 	child := &ChildState{
 		ID:          childID,
-		RemoteAddr:  remoteAddr,
+		RemoteAddr:  clientIP,
 		Transport:   "ws",
 		Conn:        conn,
 		ConnectedAt: time.Now(),
 	}
-	h.mu.Lock()
-	h.children[childID] = child
-	h.mu.Unlock()
-	log.Printf("[hub] child %s connected", childID)
+	replaced := h.replaceChild(child)
+	if replaced {
+		log.Printf("[hub] child %s reconnected from %s", childID, clientIP)
+	} else {
+		log.Printf("[hub] child %s connected from %s", childID, clientIP)
+	}
 
 	defer func() {
 		conn.Close()
+		removed := false
 		h.mu.Lock()
-		delete(h.children, childID)
+		if cur, ok := h.children[childID]; ok && cur == child && cur.Conn == conn {
+			delete(h.children, childID)
+			removed = true
+		}
 		h.mu.Unlock()
-		log.Printf("[hub] child %s disconnected", childID)
-		h.broadcastEvent("child_disconnected", childID)
+		if removed {
+			log.Printf("[hub] child %s disconnected", childID)
+			h.broadcastEvent("child_disconnected", childID)
+		} else {
+			log.Printf("[hub] stale child connection %s closed", childID)
+		}
 	}()
 
 	// Read loop
@@ -154,21 +163,6 @@ func (h *Hub) handleMessage(child *ChildState, msg *protocol.Message) {
 		child.Version = payload.Version
 		child.LastHeartbeat = time.Now()
 		child.mu.Unlock()
-
-		// Dedup by hostname: evict older connections from same hostname
-		if payload.Hostname != "" {
-			h.mu.Lock()
-			for oldID, oldChild := range h.children {
-				if oldID != child.ID && oldChild.Hostname == payload.Hostname {
-					log.Printf("[hub] dedup: evicting old child %s (same hostname %s)", oldID, payload.Hostname)
-					delete(h.children, oldID)
-					if oldChild.Conn != nil {
-						oldChild.Conn.Close()
-					}
-				}
-			}
-			h.mu.Unlock()
-		}
 
 		resp := protocol.NewMessage(protocol.TypeRegistered, protocol.RegisteredPayload{
 			ChildID:    child.ID,
@@ -323,8 +317,17 @@ func (h *Hub) send(child *ChildState, msg protocol.Message) error {
 		return err
 	}
 	child.mu.Lock()
-	defer child.mu.Unlock()
-	return child.Conn.WriteMessage(websocket.BinaryMessage, data)
+	if err := child.Conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+		child.mu.Unlock()
+		h.disconnectChild(child.ID, child)
+		return err
+	}
+	err = child.Conn.WriteMessage(websocket.BinaryMessage, data)
+	child.mu.Unlock()
+	if err != nil {
+		h.disconnectChild(child.ID, child)
+	}
+	return err
 }
 
 func (h *Hub) broadcastEvent(eventType string, data interface{}) {
@@ -332,6 +335,62 @@ func (h *Hub) broadcastEvent(eventType string, data interface{}) {
 	case h.events <- map[string]interface{}{"type": eventType, "data": data}:
 	default:
 	}
+}
+
+func (h *Hub) replaceChild(child *ChildState) bool {
+	h.mu.Lock()
+	old := h.children[child.ID]
+	h.children[child.ID] = child
+	h.mu.Unlock()
+
+	if old == nil || old == child {
+		return false
+	}
+	h.closeChildTransport(old.ID, old)
+	return true
+}
+
+func (h *Hub) closeChildTransport(childID string, child *ChildState) {
+	if child.Transport == "http" {
+		h.closeHTTPQueue(childID)
+		return
+	}
+	if child.Conn != nil {
+		child.Conn.Close()
+	}
+}
+
+func (h *Hub) disconnectChild(childID string, expected ...*ChildState) bool {
+	h.mu.RLock()
+	child := h.children[childID]
+	h.mu.RUnlock()
+	if child == nil {
+		return false
+	}
+	if len(expected) > 0 && expected[0] != nil && child != expected[0] {
+		return false
+	}
+
+	if child.Transport == "http" {
+		h.removeHTTPChild(childID, child)
+		return true
+	}
+
+	removed := false
+	h.mu.Lock()
+	if cur, ok := h.children[childID]; ok && cur == child {
+		delete(h.children, childID)
+		removed = true
+	}
+	h.mu.Unlock()
+	if !removed {
+		return false
+	}
+	if child.Conn != nil {
+		child.Conn.Close()
+	}
+	h.broadcastEvent("child_disconnected", childID)
+	return true
 }
 
 func (h *Hub) decodePayload(src, dst interface{}) {
@@ -347,6 +406,47 @@ func generateID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			if ip := cleanClientIP(part); ip != "" {
+				return ip
+			}
+		}
+	}
+	if xrip := cleanClientIP(r.Header.Get("X-Real-IP")); xrip != "" {
+		return xrip
+	}
+	if ip := cleanClientIP(r.RemoteAddr); ip != "" {
+		return ip
+	}
+	return "unknown"
+}
+
+func cleanClientIP(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		addr = host
+	}
+	addr = strings.Trim(addr, "[]")
+	if addr == "" || strings.EqualFold(addr, "unknown") {
+		return ""
+	}
+	return addr
+}
+
+func childIDFromIP(ip string) string {
+	ip = cleanClientIP(ip)
+	if ip == "" {
+		ip = "unknown"
+	}
+	replacer := strings.NewReplacer(".", "_", ":", "_", "%", "_")
+	return "ip_" + replacer.Replace(ip)
 }
 
 // ChildInfo for API responses.

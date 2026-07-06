@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>hxの偷吃 — Mother Panel</title>
+<title>hx-snack — 内网穿透面板</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&family=Noto+Sans+SC:wght@300;400;600;800&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -824,7 +824,7 @@
 <nav class="nav">
   <div class="nav-logo">
     <div class="nav-logo-icon">食</div>
-    hxの偷吃
+    hx-snack
   </div>
   <ul class="nav-links">
     <li><a href="#dashboard">仪表盘</a></li>
@@ -835,7 +835,7 @@
   </ul>
   <div class="nav-status">
     <div class="nav-status-dot"></div>
-    母体在线
+    主控端在线
   </div>
 </nav>
 
@@ -844,10 +844,10 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);"></span>
-      分布式 C2 框架 v0.2.0
+      自用内网穿透面板 v0.2.0
     </div>
     <h1 class="hero-title">
-      一个<em>母体</em>，<br>无限<em>子节点</em>
+      一个<em>主控端</em>，<br>多个<em>自用节点</em>
     </h1>
     <p class="hero-subtitle">
       从暗影中发号施令。无声的丝线横跨大陆——
@@ -906,7 +906,7 @@
     <div class="card" id="card-lat">
       <div class="card-icon">📡</div>
       <div class="card-title">延迟</div>
-      <div class="card-desc">母体 ↔ 子节点</div>
+      <div class="card-desc">主控端 ↔ 节点</div>
       <div class="card-stat">—</div>
     </div>
     <div class="card" id="card-task">
@@ -956,7 +956,7 @@
   <div class="section-header">
     <div class="section-tag">╱ 隧道</div>
     <div class="section-title">活跃隧道</div>
-    <div class="section-desc">基于WebSocket的母体到子节点端口转发</div>
+    <div class="section-desc">基于 WebSocket 的主控端到节点端口转发</div>
   </div>
 
   <div class="tunnel-list" id="tunnels-list">
@@ -965,7 +965,7 @@
 </section>
 
 <div class="footer">
-  hxの偷吃 · Mother Node · 所有子节点在线。所有隧道稳固。一切安好。
+  hx-snack · 自用内网穿透 · 等待节点连接。
 </div>
 
 <!-- Terminal Modal -->
@@ -1201,7 +1201,7 @@ async function refresh() {
     // Footer
     const footer = document.querySelector('.footer');
     if (footer) {
-      footer.textContent = `hxの偷吃 · ${stats.children || 0} 个子节点 · ${stats.tunnels || 0} 个隧道 · ${stats.tasks_completed || 0} 个任务已完成`;
+      footer.textContent = `hx-snack · ${stats.children || 0} 个节点 · ${stats.tunnels || 0} 个隧道 · ${stats.tasks_completed || 0} 个任务已完成`;
     }
 
   } catch (err) {
@@ -1209,7 +1209,7 @@ async function refresh() {
       console.warn('[webui] refresh error:', err.message);
       lastError = err.message;
       const footer = document.querySelector('.footer');
-      if (footer) footer.textContent = 'hxの偷吃 · 母体离线 — API无法访问';
+      if (footer) footer.textContent = 'hx-snack · 主控端离线 — API无法访问';
     }
   }
 }
@@ -1240,8 +1240,9 @@ function quickCmd(cmd) {
 
 async function execCmd() {
   const input = document.getElementById('cmdInput');
-  const cmd = input.value.trim();
-  if (!cmd || !currentChildID) return;
+  const cmd = input.value;
+  if (!cmd.trim() || !currentChildID) return;
+  const timeoutSec = 30;
   const out = document.getElementById('termOutput');
   out.innerHTML = '<span style="color:var(--pink);">$ ' + esc(cmd) + '</span>\n<span style="color:rgba(245,245,245,0.3);">执行中...</span>';
   input.value = '';
@@ -1250,28 +1251,33 @@ async function execCmd() {
     const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({child_id: currentChildID, command: 'sh', args: ['-c', cmd], timeout: 30})
+      body: JSON.stringify({child_id: currentChildID, command: 'sh', args: ['-c', cmd], timeout: timeoutSec})
     });
     const task = await res.json();
     if (task.error) { out.innerHTML = '<span style="color:var(--accent);">错误: ' + esc(task.error) + '</span>'; return; }
 
     // Poll for result
     let result = null;
-    for (let i = 0; i < 30; i++) {
+    const pollIntervalMs = 500;
+    const maxAttempts = Math.ceil((timeoutSec + 5) * 1000 / pollIntervalMs);
+    for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 500));
       const r2 = await fetch('/api/tasks/' + task.id);
       result = await r2.json();
-      if (result.status === 'completed' || result.status === 'failed') break;
+      if (result.status === 'completed' || result.status === 'failed' || result.status === 'timeout') break;
     }
 
     if (result) {
       const stdout = result.stdout || '';
       const stderr = result.stderr || '';
-      const exit = result.exit_code !== undefined ? ' [' + result.exit_code + ']' : '';
       let text = '<span style="color:var(--pink);">$ ' + esc(cmd) + '</span>\n';
       text += stdout ? esc(stdout) : '';
       text += stderr ? '<span style="color:var(--accent);">' + esc(stderr) + '</span>' : '';
-      text += '<span style="color:rgba(245,245,245,0.2);">' + (result.duration_ms||0) + 'ms, exit:' + (result.exit_code||'?') + '</span>';
+      if (result.stdout_truncated || result.stderr_truncated) {
+        text += '<span style="color:var(--accent);">\n[输出超过限制，已截断]</span>\n';
+      }
+      const exitCode = result.exit_code !== undefined ? result.exit_code : '?';
+      text += '<span style="color:rgba(245,245,245,0.2);">' + (result.duration_ms||0) + 'ms, exit:' + exitCode + '</span>';
       out.innerHTML = text;
     } else {
       out.innerHTML = '<span style="color:var(--accent);">超时</span>';

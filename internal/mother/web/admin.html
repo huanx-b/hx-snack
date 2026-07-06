@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>管理后台 — hxの偷吃</title>
+<title>管理后台 — hx-snack</title>
 <style>
   :root {
     --bg: #0b0b0f;
@@ -198,7 +198,7 @@
 <body>
 <div id="loginPage" class="login-box">
   <h2>管理后台</h2>
-  <p class="sub">hxの偷吃 · Mother Control Panel</p>
+  <p class="sub">hx-snack · 自用内网穿透管理</p>
   <div class="error" id="error"></div>
   <label>用户名</label>
   <input type="text" id="username" placeholder="admin">
@@ -215,8 +215,8 @@
   </div>
 
   <div class="panel">
-    <h3>🚀 部署子节点</h3>
-    <p style="color:rgba(245,245,245,0.4);font-size:0.85rem;margin-bottom:12px;">在任何Linux VPS上运行以下命令即可加入集群</p>
+    <h3>🚀 部署节点</h3>
+    <p style="color:rgba(245,245,245,0.4);font-size:0.85rem;margin-bottom:12px;">在自己的 Linux 主机上运行以下命令即可加入面板</p>
     <div class="code-block" id="deployCmd" onclick="copyCmd()"></div>
     <button class="copy-btn" id="copyBtn" onclick="copyCmd()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -228,7 +228,7 @@
     <h3>🔗 隧道管理</h3>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <select id="tunChild" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;flex:1;min-width:0;"></select>
-      <input id="tunPort" placeholder="母体端口" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;width:100px;">
+      <input id="tunPort" placeholder="主控端口" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;width:100px;">
       <input id="tunTarget" placeholder="目标 host:port" value="127.0.0.1:22" style="padding:8px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:6px;color:var(--white);font-size:0.85rem;flex:1;min-width:0;">
       <button class="copy-btn" onclick="createTunnel()" style="margin-top:0;">创建隧道</button>
     </div>

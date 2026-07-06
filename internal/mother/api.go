@@ -96,22 +96,7 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 		case "DELETE":
 			// Disconnect a child
 			id := r.URL.Query().Get("id")
-			hub.mu.Lock()
-			child, ok := hub.children[id]
-			if ok {
-				delete(hub.children, id)
-			}
-			hub.mu.Unlock()
-			if ok && child.Transport == "http" {
-				hub.httpMu.Lock()
-				if q, ok := hub.httpQueues[id]; ok {
-					close(q)
-					delete(hub.httpQueues, id)
-				}
-				hub.httpMu.Unlock()
-			} else if ok && child.Conn != nil {
-				child.Conn.Close()
-			}
+			hub.disconnectChild(id)
 			writeJSON(w, map[string]string{"status": "disconnected"})
 		default:
 			http.Error(w, "method not allowed", 405)
@@ -279,7 +264,7 @@ func SetupRoutes(mux *http.ServeMux, hub *Hub, tm *TunnelManager) {
 	// HTTP child long-poll transport
 	SetupHTTPChildRoutes(mux, hub)
 
-	// WS for children (both /ws and /api/stream for stealth)
+	// WS for nodes (both /ws and /api/stream)
 	mux.HandleFunc("/ws", hub.HandleWS)
 	mux.HandleFunc("/api/stream", hub.HandleWS)
 
@@ -354,7 +339,7 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 }
 
 const indexFallback = `<!DOCTYPE html>
-<html><head><title>hxの偷吃</title><meta charset="utf-8"></head>
+<html><head><title>hx-snack</title><meta charset="utf-8"></head>
 <body style="background:#0b0b0f;color:#f5f5f5;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-<h1 style="font-weight:800;font-size:2rem">hxの偷吃 <span style="color:#d4143a">Mother</span> is online</h1>
+<h1 style="font-weight:800;font-size:2rem">hx-snack <span style="color:#d4143a">主控端</span>在线</h1>
 </body></html>`

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# hxの偷吃 — Child Node Auto-Installer
+# hx-snack — Node Auto-Installer
 # Usage: curl -sL .../install.sh | bash -s -- --mother wss://host/ws --key xxx
 
 MOTHER_URL=""
@@ -47,7 +47,7 @@ sudo mv /tmp/hx-snack-child "$BIN_DIR/hx-snack-child"
 # Create systemd service
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
-Description=hxの偷吃 Child Node
+Description=hx-snack Intranet Tunnel Node
 After=network.target
 
 [Service]

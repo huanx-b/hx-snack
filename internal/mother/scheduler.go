@@ -21,19 +21,21 @@ const (
 
 // TaskRecord stores full task lifecycle.
 type TaskRecord struct {
-	ID        string     `json:"id"`
-	ChildID   string     `json:"child_id"`
-	Command   string     `json:"command"`
-	Args      []string   `json:"args"`
-	Status    TaskStatus `json:"status"`
-	ExitCode  int        `json:"exit_code"`
-	Stdout    string     `json:"stdout"`
-	Stderr    string     `json:"stderr"`
-	Duration  int64      `json:"duration_ms"`
-	CreatedAt time.Time  `json:"created_at"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	Result    chan *protocol.TaskResultPayload `json:"-"`
+	ID              string                           `json:"id"`
+	ChildID         string                           `json:"child_id"`
+	Command         string                           `json:"command"`
+	Args            []string                         `json:"args"`
+	Status          TaskStatus                       `json:"status"`
+	ExitCode        int                              `json:"exit_code"`
+	Stdout          string                           `json:"stdout"`
+	Stderr          string                           `json:"stderr"`
+	StdoutTruncated bool                             `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool                             `json:"stderr_truncated,omitempty"`
+	Duration        int64                            `json:"duration_ms"`
+	CreatedAt       time.Time                        `json:"created_at"`
+	StartedAt       *time.Time                       `json:"started_at,omitempty"`
+	EndedAt         *time.Time                       `json:"ended_at,omitempty"`
+	Result          chan *protocol.TaskResultPayload `json:"-"`
 }
 
 // TaskQueue manages task dispatch and lifecycle.
@@ -138,6 +140,8 @@ func (tq *TaskQueue) completeTask(taskID string, result *protocol.TaskResultPayl
 	record.ExitCode = result.ExitCode
 	record.Stdout = result.Stdout
 	record.Stderr = result.Stderr
+	record.StdoutTruncated = result.StdoutTruncated
+	record.StderrTruncated = result.StderrTruncated
 	record.Duration = result.Duration
 	now := time.Now()
 	record.EndedAt = &now

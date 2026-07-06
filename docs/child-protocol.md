@@ -203,7 +203,7 @@ Child sends:  {"type":"heartbeat","payload":{"seq":0}}
 Mother echoes: {"type":"heartbeat","payload":{}}  // seq NOT echoed
 ```
 
-- Interval: random 8-25 seconds (not fixed — OPSEC)
+- Interval: random 8-25 seconds to avoid synchronized reconnect/report bursts
 - Mother config says `heartbeat_s: 5` but child should use 8-25s range
 - No timeout detection needed on child side — TCP disconnect handles it
 
@@ -333,12 +333,12 @@ done
 
 **Note**: The child already has internal reconnect logic for WebSocket drops. The watchdog is for PROCESS crashes (segfault, OOM, uncaught exception). Don't confuse the two — if WebSocket drops but process stays alive, the child's own backoff handles it.
 
-### OPSEC Considerations
+### Deployment Notes
 
-- **Process name**: Disguise `argv[0]` (Go child does this via `reflect.StringHeader`)
-- **Binary name**: Name it after a common service (`/usr/bin/node`, `nginx-helper`, `sshd-aux`)
-- **Ports**: Only outbound connections (WebSocket + optional SSH), no listening ports
-- **Files**: Write nothing to disk unless necessary (no log files on target)
+- **Process manager**: Prefer systemd or another supervisor for auto-restart.
+- **Network**: Nodes only need outbound access to the main server.
+- **Logs**: Route logs to the supervisor or system journal for easier troubleshooting.
+- **Identity**: The main server treats one source IP as one node.
 
 ### systemd Unit Example
 

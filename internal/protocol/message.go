@@ -70,11 +70,13 @@ type TaskPayload struct {
 
 // TaskResultPayload is the result back to mother.
 type TaskResultPayload struct {
-	TaskID   string `msgpack:"task_id" json:"task_id"`
-	ExitCode int    `msgpack:"exit_code" json:"exit_code"`
-	Stdout   string `msgpack:"stdout" json:"stdout"`
-	Stderr   string `msgpack:"stderr" json:"stderr"`
-	Duration int64  `msgpack:"duration_ms" json:"duration_ms"`
+	TaskID          string `msgpack:"task_id" json:"task_id"`
+	ExitCode        int    `msgpack:"exit_code" json:"exit_code"`
+	Stdout          string `msgpack:"stdout" json:"stdout"`
+	Stderr          string `msgpack:"stderr" json:"stderr"`
+	Duration        int64  `msgpack:"duration_ms" json:"duration_ms"`
+	StdoutTruncated bool   `msgpack:"stdout_truncated,omitempty" json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `msgpack:"stderr_truncated,omitempty" json:"stderr_truncated,omitempty"`
 }
 
 // TunnelOpenPayload requests a tunnel from child.
