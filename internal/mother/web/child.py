@@ -5,12 +5,12 @@ msgpack + WebSocket 全部手写实现。
 """
 
 # ====== 硬编码配置（部署时修改这里） ======
-MOTHER_URL = "ws://0.0.0.0.0.0.0:10300/api/stream"
+MOTHER_URL = "ws://127.0.0.1:10300/api/stream"
 MOTHER_KEY = "REMOVED-KEY"
 
 # SSH 隧道（绕过端口封锁，22→10300）
 SSH_TUNNEL = False          # 启用 SSH 隧道
-SSH_HOST = "0.0.0.0.0.0.0"  # 主控端 SSH 地址
+SSH_HOST = "127.0.0.1"  # 服务端 SSH 地址
 SSH_PORT = 22
 SSH_USER = "root"
 SSH_KEY  = ""               # 私钥路径（优先）
@@ -643,10 +643,10 @@ class Agent:
     def _get_connect_url(self):
         """返回实际连接 URL（走隧道则连 localhost）"""
         if self.ssh_tunnel:
-            return self._build_url().replace(
-                f"0.0.0.0.0.0.0:10300",
-                f"localhost:{self.tunnel_port}"
-            )
+            url = self._build_url()
+            scheme, _, rest = url.partition("://")
+            _, slash, path = rest.partition("/")
+            return f"{scheme}://localhost:{self.tunnel_port}{slash}{path}"
         return self._build_url()
 
     def _build_url(self):

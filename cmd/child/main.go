@@ -14,10 +14,10 @@ import (
 
 // ====== 默认配置（命令行参数可覆盖） ======
 const (
-	defaultMotherURL = "ws://0.0.0.0.0.0.0:10300/api/stream"
+	defaultMotherURL = "ws://127.0.0.1:10300/api/stream"
 	defaultMotherKey = "REMOVED-KEY"
 
-	defaultSSHHost    = "0.0.0.0.0.0.0"
+	defaultSSHHost    = "127.0.0.1"
 	defaultSSHPort    = "22"
 	defaultSSHUser    = "root"
 	defaultTunnelPort = "10399"

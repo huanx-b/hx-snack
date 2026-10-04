@@ -5,7 +5,7 @@ msgpack + WebSocket 全部手写实现。
 """
 
 # ====== 硬编码配置（部署时修改这里） ======
-MOTHER_URL = "ws://0.0.0.0.0.0.0:10300/api/stream"
+MOTHER_URL = "ws://127.0.0.1:10300/api/stream"
 MOTHER_KEY = "REMOVED-KEY"
 # ============================================
 
