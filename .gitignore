@@ -11,3 +11,5 @@ dist/
 /child-linux-amd64
 /child-*
 *.bak
+__pycache__/
+*.pyc

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +18,8 @@ import (
 var webAssets embed.FS
 
 var (
-	adminUsername = "huanx"
-	adminPassword = "REDACTED1"
+	adminUsername = os.Getenv("HX_ADMIN_USER")
+	adminPassword = os.Getenv("HX_ADMIN_PASS")
 	adminSessions = sync.Map{} // token -> expiry
 )
 
@@ -67,6 +68,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, map[string]string{"error": "invalid request"})
+		return
+	}
+	if adminUsername == "" || adminPassword == "" {
+		writeJSON(w, map[string]string{"error": "管理后台未配置：请设置 HX_ADMIN_USER 和 HX_ADMIN_PASS 环境变量"})
 		return
 	}
 	if req.Username != adminUsername || req.Password != adminPassword {

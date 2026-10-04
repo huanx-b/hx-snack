@@ -26,7 +26,7 @@ ws://<mother_host>:10300/api/stream?key=<psk>
 ```
 
 - Path MUST be `/api/stream` (also works at `/ws` — same handler)
-- PSK sent as query param `?key=REMOVED-KEY`
+- PSK sent as query param `?key=<psk>`
 - No other auth headers needed
 - WebSocket subprotocol: none
 

@@ -6,8 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"reflect"
-	"unsafe"
 
 	"github.com/huanxherta/hx-snack/internal/child"
 )
@@ -15,7 +13,7 @@ import (
 // ====== 默认配置（命令行参数可覆盖） ======
 const (
 	defaultMotherURL = "ws://127.0.0.1:10300/api/stream"
-	defaultMotherKey = "REMOVED-KEY"
+	defaultMotherKey = ""
 
 	defaultSSHHost    = "127.0.0.1"
 	defaultSSHPort    = "22"
@@ -26,7 +24,7 @@ const (
 // ====== 命令行参数 ======
 var (
 	flagMotherURL  = flag.String("host", "", "mother WebSocket URL (default: "+defaultMotherURL+")")
-	flagMotherKey  = flag.String("key", "", "pre-shared key (default: "+defaultMotherKey+")")
+	flagMotherKey  = flag.String("key", "", "pre-shared key (must match mother's -key)")
 	flagSSH        = flag.Bool("ssh", false, "enable SSH tunnel")
 	flagSSHHost    = flag.String("ssh-host", "", "SSH host (default: "+defaultSSHHost+")")
 	flagSSHPort    = flag.String("ssh-port", "", "SSH port (default: "+defaultSSHPort+")")
@@ -38,23 +36,7 @@ var (
 
 // ========================================
 
-func xxxxxxxxProcess() {
-	name := "/usr/bin/node /app/server.js"
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&os.Args[0]))
-	buf := (*[1 << 20]byte)(unsafe.Pointer(hdr.Data))[:hdr.Len]
-	copy(buf, name)
-	for i := len(name); i < len(buf); i++ {
-		buf[i] = 0
-	}
-	hdr.Len = len(name)
-}
-
 func main() {
-	xxxxxxxxProcess()
-
-	// Parse flags silently — xxxxxxxxProcess messes with argv but flag pkg
-	// reads os.Args before we corrupt it, so this should be fine.
-	flag.CommandLine.SetOutput(os.Stderr)
 	flag.Parse()
 
 	motherURL := defaultMotherURL

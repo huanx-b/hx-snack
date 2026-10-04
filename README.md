@@ -50,10 +50,10 @@ http://localhost:8080
 http://localhost:8080/admin
 ```
 
-默认账号密码：
+管理后台账号通过环境变量设置（未设置时无法登录）：
 
-```text
-huanx / REDACTED1
+```bash
+HX_ADMIN_USER=admin HX_ADMIN_PASS=your-password ./mother -port 8080 -key my-secret-key
 ```
 
 ### 启动节点
