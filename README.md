@@ -1,23 +1,23 @@
 # hx-snack
 
-自用内网穿透与节点管理工具。一个主控端负责 Web 面板、API、隧道入口和 HTTP 代理，多个节点主动连回主控端，用于在自己的服务器、开发机、家庭网络或临时环境之间做轻量转发和运维管理。
+自用内网穿透与节点管理工具。一个服务端负责 Web 面板、API、隧道入口和 HTTP 代理，多个节点主动连回服务端，用于在自己的服务器、开发机、家庭网络或临时环境之间做轻量转发和运维管理。
 
-> 一个主控端，多个自用节点。
+> 一个服务端，多个自用节点。
 
 ## 项目定位
 
-- **内网穿透**：在主控端开放端口，通过在线节点转发到节点侧可访问的服务。
-- **HTTP 代理**：通过 `/p/...` 把请求从主控端转发到节点侧访问目标。
+- **内网穿透**：在服务端开放端口，通过在线节点转发到节点侧可访问的服务。
+- **HTTP 代理**：通过 `/p/...` 把请求从服务端转发到节点侧访问目标。
 - **节点监控**：查看节点 CPU、内存、网络、在线状态和运行时间。
-- **远程运维命令**：通过 Web 面板或 API 对指定节点执行维护命令。
-- **自动重连**：节点断线后自动回连；主控端按来源 IP 保持节点 ID 稳定。
+- **运维命令**：通过 Web 面板或 API 对在线节点执行维护命令。
+- **自动重连**：节点断线后自动回连；服务端按来源 IP 保持节点 ID 稳定。
 - **单 IP 单节点**：同一个来源 IP 只保留一个节点，重连会覆盖旧连接。
 
 ## 架构
 
 ```text
 ┌─────────────────────────────────────┐
-│              主控端 Mother          │
+│              服务端 Mother          │
 │  WebUI / API / WebSocket / Tunnel   │
 └──────────────────┬──────────────────┘
                    │ WebSocket 或 HTTP 长轮询
@@ -31,7 +31,7 @@
 
 ## 快速开始
 
-### 启动主控端
+### 启动服务端
 
 ```bash
 go build -o mother ./cmd/mother/
@@ -60,10 +60,10 @@ huanx / REDACTED1
 
 ```bash
 go build -o child ./cmd/child/
-./child -host ws://主控端地址:8080/api/stream -key my-secret-key
+./child -host ws://服务端地址:8080/api/stream -key my-secret-key
 ```
 
-节点会主动连接主控端。主控端按照节点来源 IP 生成稳定 ID，例如：
+节点会主动连接服务端。服务端按照节点来源 IP 生成稳定 ID，例如：
 
 ```text
 ip_203_0_113_10
@@ -73,7 +73,7 @@ ip_203_0_113_10
 
 ## TCP 隧道
 
-创建一个从主控端端口到节点侧服务的转发：
+创建一个从服务端端口到节点侧服务的转发：
 
 ```bash
 curl -X POST http://localhost:8080/api/tunnels \
@@ -81,7 +81,7 @@ curl -X POST http://localhost:8080/api/tunnels \
   -d '{"child_id":"ip_203_0_113_10","target":"127.0.0.1:22","listen_port":10022}'
 ```
 
-如果不指定 `child_id`，主控端会把当前在线节点加入同一端口的转发池：
+如果不指定 `child_id`，服务端会把当前在线节点加入同一端口的转发池：
 
 ```bash
 curl -X POST http://localhost:8080/api/tunnels \
@@ -110,7 +110,7 @@ curl http://localhost:8080/p/example.com/
 | --- | --- | --- |
 | `/api/children` | GET | 查看在线节点 |
 | `/api/children?id=...` | DELETE | 断开指定节点 |
-| `/api/tasks` | POST/GET | 下发命令 / 查看任务 |
+| `/api/tasks` | POST/GET | 下发运维任务 / 查看任务 |
 | `/api/tasks/{id}` | GET | 查看单个任务结果 |
 | `/api/tunnels` | POST/GET | 创建 / 查看隧道 |
 | `/api/tunnels/{id}` | DELETE | 关闭隧道 |
@@ -121,7 +121,7 @@ curl http://localhost:8080/p/example.com/
 | `/api/http/*` | HTTP | 节点 HTTP 长轮询入口 |
 | `/p/...` | ANY | 通过节点转发 HTTP 请求 |
 
-### 下发命令
+### 下发运维任务
 
 ```bash
 curl -X POST http://localhost:8080/api/tasks \
@@ -154,9 +154,9 @@ scripts/build.sh dev
 ## 目录结构
 
 ```text
-cmd/mother/              主控端入口
+cmd/mother/              服务端入口
 cmd/child/               节点入口
-internal/mother/         主控端 Hub、API、隧道、代理
+internal/mother/         服务端 Hub、API、隧道、代理
 internal/child/          节点连接、监控、命令执行
 internal/protocol/       消息协议定义
 internal/mother/web/     内嵌 WebUI 和下载资源
@@ -170,7 +170,7 @@ scripts/                 构建和安装脚本
 - 同 IP 新连接会覆盖旧连接。
 - WebSocket 和 HTTP 长轮询使用相同 ID 策略。
 - 任务输出默认按 stdout/stderr 各 4 MiB 截断。
-- 所有运行状态目前保存在内存中，主控端重启后需要重新连接节点。
+- 所有运行状态目前保存在内存中，服务端重启后需要重新连接节点。
 
 ## License
 
